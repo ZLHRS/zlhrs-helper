@@ -1,0 +1,43 @@
+ZLHRS Helper
+
+Единственная рабочая папка проекта: /home/zlhrs/zlhrs-helper (Ubuntu WSL, zlhrs).
+Путь из Windows: \\wsl.localhost\Ubuntu\home\zlhrs\zlhrs-helper
+
+СБОРКА И ЗАПУСК
+Из WSL:
+  cd /home/zlhrs/zlhrs-helper
+  ./build.sh
+  ./build.sh --test
+
+Сборка использует Windows PowerShell и .NET Framework 4.8 через WSL interop.
+Приложение остаётся Windows-приложением. Готовый файл: build/NVIDIAHelper.exe.
+Запуск из Проводника Windows по указанному UNC-пути или из WSL:
+  ./build/NVIDIAHelper.exe
+
+Из Windows PowerShell: ./Build.ps1 -Test
+Повторная сборка обновляет единственный каталог build/.
+Автоматические архивы, каталоги release-* и повышение номера версии не создаются.
+
+ФУНКЦИИ
+- Выбор OpenAI / Gemini с отдельными моделями и зашифрованными ключами.
+- Горячие клавиши, системный промпт и непрозрачность окна ответа.
+- Семь независимых тем для настроек и окна ответа.
+- Фоны и чиби-курсоры по теме основного окна.
+- В окне ответа только текст и крестик.
+
+ПО УМОЛЧАНИЮ
+Ctrl + Alt + Q — снимок экрана и запрос ответа.
+Ctrl + Alt + A — показать / скрыть ответ.
+Ctrl + Alt + X — отменить запрос и очистить ответ.
+Ctrl + Alt + S — настройки.
+
+ДАННЫЕ
+Настройки Windows: %LOCALAPPDATA%/ZlhrsHelper/settings.json.
+Ключи защищены Windows DPAPI и не входят в проект.
+Исходные PNG и промпты: source/wallpapers/ и source/cursors/.
+Иконка: https://www.nvidia.com/favicon.ico
+Автор: ZLHRS; приложение не является продуктом NVIDIA.
+
+ПРОВЕРКА
+Локальные тесты не выполняют живые API-запросы.
+Результаты последнего запуска: build/test-report.txt.

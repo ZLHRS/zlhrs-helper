@@ -1,0 +1,12 @@
+/build/
+*.zip
+*.user
+/.vs/
+/runtime-user-data/
+.env
+.env.*
+!.env.example
+settings.json
+gemini-settings.json
+*.pem
+*.key
