@@ -1,7 +1,7 @@
 param([switch]$Test,[string]$OutputDirectory="")
 $ErrorActionPreference = 'Stop'
 $taskRoot = $PSScriptRoot
-$outputRoot = if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { Join-Path $taskRoot 'build' } else { [IO.Path]::GetFullPath($OutputDirectory) }
+$outputRoot = if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $taskRoot } else { [IO.Path]::GetFullPath($OutputDirectory) }
 [IO.Directory]::CreateDirectory($outputRoot) | Out-Null
 $outputExe = Join-Path $outputRoot 'NVIDIAHelper.exe'
 $fx = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319'
@@ -16,7 +16,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Compilation failed.' }
 Write-Output 'Built NVIDIAHelper.exe'
 if ($outputRoot -ne $taskRoot) { Copy-Item -LiteralPath (Join-Path $taskRoot 'NVIDIAHelper.exe.config') -Destination (Join-Path $outputRoot 'NVIDIAHelper.exe.config') -Force }
 if ($Test) {
-    $report = Join-Path $outputRoot 'test-report.txt'
+    $reportRoot = Join-Path $taskRoot 'build'
+    [IO.Directory]::CreateDirectory($reportRoot) | Out-Null
+    $report = Join-Path $reportRoot 'test-report.txt'
     $process = Start-Process -FilePath $outputExe -ArgumentList @('--self-test', ('"' + $report + '"')) -WindowStyle Hidden -Wait -PassThru
     Get-Content -LiteralPath $report
     if ($process.ExitCode -ne 0) { throw 'Self-tests failed.' }

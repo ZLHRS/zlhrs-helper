@@ -15,4 +15,4 @@ fi
 windows_root="$(wslpath -w "$project_dir")"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${windows_root}\\Build.ps1" "${args[@]}"
 
-chmod +x "$project_dir/build/NVIDIAHelper.exe"
+chmod +x "$project_dir/NVIDIAHelper.exe"

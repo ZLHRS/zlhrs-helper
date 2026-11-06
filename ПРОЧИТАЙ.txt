@@ -10,12 +10,12 @@ ZLHRS Helper
   ./build.sh --test
 
 Сборка использует Windows PowerShell и .NET Framework 4.8 через WSL interop.
-Приложение остаётся Windows-приложением. Готовый файл: build/NVIDIAHelper.exe.
+Приложение остаётся Windows-приложением. Готовый файл: NVIDIAHelper.exe.
 Запуск из Проводника Windows по указанному UNC-пути или из WSL:
-  ./build/NVIDIAHelper.exe
+  ./NVIDIAHelper.exe
 
 Из Windows PowerShell: ./Build.ps1 -Test
-Повторная сборка обновляет единственный каталог build/.
+Повторная сборка обновляет EXE в корне проекта.
 Автоматические архивы, каталоги release-* и повышение номера версии не создаются.
 
 ФУНКЦИИ
