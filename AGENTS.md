@@ -8,3 +8,4 @@
 - Keep assembly metadata version stable for routine edits. Update build/NVIDIAHelper.exe in place.
 - Preserve the existing features, theme choices, character backgrounds and cursors. Settings remain in the current Windows user's LocalAppData/ZlhrsHelper/settings.json; do not print keys or copy user settings into source control.
 - For Word/DOCX work, follow the user's word-lab-style skill by default; preserve existing formatting on targeted text edits.
+- Keep build/NVIDIAHelper.exe and build/NVIDIAHelper.exe.config committed and synchronized with source so a clone can run immediately. Ignore other build outputs. After code changes, rebuild the same EXE in place before pushing. Windows launcher: Запустить.cmd; WSL launcher: ./run.sh.

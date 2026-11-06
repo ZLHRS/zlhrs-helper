@@ -1,4 +1,6 @@
-/build/
+/build/*
+!/build/NVIDIAHelper.exe
+!/build/NVIDIAHelper.exe.config
 *.zip
 *.user
 /.vs/
