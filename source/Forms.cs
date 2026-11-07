@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
@@ -19,23 +20,26 @@ namespace ZlhrsHelper {
         Palette palette=Palette.Find("light","light");
         internal bool WantedVisible=false;
         internal AnswerForm(){
-            FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;TopMost=true;StartPosition=FormStartPosition.Manual;AutoScaleMode=AutoScaleMode.Dpi;
+            SuspendLayout();
+            FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=false;TopMost=true;StartPosition=FormStartPosition.Manual;
             ClientSize=new Size(440,292);MinimumSize=new Size(340,200);BackColor=Color.White;Opacity=.88;
             hide=Theme.Button("×",397,5,36,false);hide.Size=new Size(34,29);hide.BackColor=BackColor;hide.Anchor=AnchorStyles.Top|AnchorStyles.Right;hide.Click+=(s,e)=>SetVisible(false);Controls.Add(hide);
             hide.FlatAppearance.BorderSize=0;
             viewport=new Panel{Location=new Point(16,38),Size=new Size(408,238),AutoScroll=true,BackColor=BackColor,Anchor=AnchorStyles.Top|AnchorStyles.Bottom|AnchorStyles.Left|AnchorStyles.Right};Controls.Add(viewport);
             body=new Label{Location=Point.Empty,AutoSize=true,MaximumSize=new Size(384,0),BackColor=BackColor,ForeColor=Color.Black,Font=new Font("Segoe UI",11),UseMnemonic=false};viewport.Controls.Add(body);
-            viewport.SizeChanged+=(s,e)=>body.MaximumSize=new Size(Math.Max(100,viewport.ClientSize.Width-24),0);
+            viewport.SizeChanged+=(s,e)=>ResizeAnswerText();
             MouseDown+=(s,e)=>{if(e.Button==MouseButtons.Left)Native.Drag(Handle);};
             viewport.MouseDown+=(s,e)=>{if(e.Button==MouseButtons.Left)Native.Drag(Handle);};
             body.MouseDown+=(s,e)=>{if(e.Button==MouseButtons.Left)Native.Drag(Handle);};
             body.Text="";
             SetTheme("light");
+            AutoScaleDimensions=new SizeF(96,96);AutoScaleMode=AutoScaleMode.Dpi;
+            ResumeLayout(true);ResizeAnswerText();
         }
         protected override bool ShowWithoutActivation { get { return true; } }
         protected override CreateParams CreateParams { get { var p=base.CreateParams;p.ExStyle|=0x08000000|0x80;return p; } }
         protected override void WndProc(ref Message m){
-            if(m.Msg==0x84){base.WndProc(ref m);Point p=PointToClient(new Point((short)m.LParam.ToInt32(),(short)(m.LParam.ToInt32()>>16)));if(p.X>=ClientSize.Width-14&&p.Y>=ClientSize.Height-14)m.Result=new IntPtr(17);return;}
+            if(m.Msg==0x84){base.WndProc(ref m);Point p=PointToClient(new Point((short)m.LParam.ToInt32(),(short)(m.LParam.ToInt32()>>16)));int grip=Math.Max(14,DeviceDpi*14/96);if(p.X>=ClientSize.Width-grip&&p.Y>=ClientSize.Height-grip)m.Result=new IntPtr(17);return;}
             if(m.Msg==0x21){m.Result=new IntPtr(3);return;}base.WndProc(ref m);
         }
         protected override void OnPaint(PaintEventArgs e){base.OnPaint(e);using(var p=new Pen(palette.Border))e.Graphics.DrawRectangle(p,0,0,ClientSize.Width-1,ClientSize.Height-1);}
@@ -46,7 +50,11 @@ namespace ZlhrsHelper {
             hide.FlatAppearance.MouseOverBackColor=palette.Surface;hide.FlatAppearance.MouseDownBackColor=palette.Border;
             Invalidate(true);
         }
-        internal void PlaceOn(Screen screen){var r=screen.WorkingArea;Location=new Point(r.Right-Width-22,r.Bottom-Height-22);}
+        void ResizeAnswerText(){body.MaximumSize=new Size(Math.Max(1,viewport.ClientSize.Width-24*DeviceDpi/96),0);}
+        internal void PlaceOn(Screen screen){
+            var r=screen.WorkingArea;int pad=22*DeviceDpi/96;
+            Location=new Point(Math.Max(r.Left,r.Right-Width-pad),Math.Max(r.Top,r.Bottom-Height-pad));
+        }
         internal void SetVisible(bool visible){WantedVisible=visible;RestoreVisibility();}
         internal void RestoreVisibility(){if(WantedVisible&&Opacity>0){if(!Visible)Show();}else Hide();}
         internal void SetAnswer(string text,string caption){body.Text=text;viewport.AutoScrollPosition=Point.Empty;RestoreVisibility();}
@@ -75,14 +83,18 @@ namespace ZlhrsHelper {
         Image wallpaperImage;
         Palette mainPalette;
         CharacterCursor characterCursor;
+        Dictionary<Control,Rectangle> designBounds;
+        SettingsLayout layout;
+        Rectangle lastWorkArea;
+        bool applyingLayout, fitting, fitQueued;
         internal string WallpaperId { get { return wallpaper==null?"":wallpaper.Id; } }
         internal string CursorThemeId { get { return characterCursor==null?"":characterCursor.ThemeId; } }
         protected override bool ShowWithoutActivation { get { return preview; } }
         internal MainForm(bool previewOnly){
-            preview=previewOnly;
-            Text=Branding.Name;ClientSize=new Size(990,810);FormBorderStyle=FormBorderStyle.FixedSingle;MaximizeBox=false;StartPosition=FormStartPosition.CenterScreen;
+            preview=previewOnly;SuspendLayout();
+            Text=Branding.Name;ClientSize=SettingsLayout.DesignSize;FormBorderStyle=FormBorderStyle.Sizable;StartPosition=FormStartPosition.CenterScreen;
             SetStyle(ControlStyles.OptimizedDoubleBuffer|ControlStyles.AllPaintingInWmPaint,true);
-            Font=new Font("Segoe UI",10);BackColor=SettingsTheme.Background;ForeColor=SettingsTheme.Text;AutoScaleMode=AutoScaleMode.Dpi;
+            Font=new Font("Segoe UI",10);BackColor=SettingsTheme.Background;ForeColor=SettingsTheme.Text;
             string warning="";
             try{settings=preview?new Settings():Settings.Load();}catch{settings=new Settings();warning="Настройки не удалось прочитать. Введите ключ заново.";}
             draft=Json.New().Deserialize<Settings>(Json.New().Serialize(settings));
@@ -123,7 +135,6 @@ namespace ZlhrsHelper {
             mainTheme.SelectedIndexChanged+=(s,e)=>{draft.MainTheme=((Palette)mainTheme.SelectedItem).Id;ApplyMainTheme();};
             answerTheme.SelectedIndexChanged+=(s,e)=>{draft.AnswerTheme=((Palette)answerTheme.SelectedItem).Id;mini.SetTheme(draft.AnswerTheme);};
             ApplyMainTheme();mini.SetTheme(((Palette)answerTheme.SelectedItem).Id);
-            ClientSize=new Size(990,810);
             tray=new NotifyIcon{Icon=Branding.Icon,Text=Branding.Name,Visible=!preview};
             // Menus are separate top-level native windows; protect their handles as well.
             var menu=new ContextMenuStrip{BackColor=Color.White,ForeColor=Color.Black,RenderMode=ToolStripRenderMode.System};menu.Opened+=(s,e)=>Native.Exclude(menu.Handle);
@@ -136,10 +147,82 @@ namespace ZlhrsHelper {
             };
             FormClosing+=(s,e)=>{if(!closing&&!preview&&e.CloseReason==CloseReason.UserClosing){e.Cancel=true;Hide();}else Cleanup();};
             if(!preview){
-                AutoScroll=true;AutoScrollMinSize=new Size(970,810);ClientSize=new Size(Math.Min(990,Screen.PrimaryScreen.WorkingArea.Width-40),Math.Min(810,Screen.PrimaryScreen.WorkingArea.Height-65));
                 Deactivate+=(s,e)=>{if(!closing){try{RegisterKeys(settings.GetHotkeys());}catch(Exception ex){state.Text=ex.Message;}}};
                 Activated+=(s,e)=>{foreach(var box in hotkeys)if(box.Focused){UnregisterKeys();break;}};
             }
+            designBounds=new Dictionary<Control,Rectangle>();
+            foreach(Control control in Controls){
+                Rectangle bounds=control.Bounds;
+                if(control is ComboBox)bounds.Height=30;
+                if(control is TextBox&&!((TextBox)control).Multiline)bounds.Height=25;
+                designBounds.Add(control,bounds);
+            }
+            AutoScroll=true;
+            AutoScaleDimensions=new SizeF(96,96);AutoScaleMode=AutoScaleMode.Dpi;
+            ResumeLayout(true);Reflow();
+        }
+        protected override void OnLoad(EventArgs e){
+            base.OnLoad(e);
+            if(!preview)FitToMonitor(true);
+            Reflow();ApplyCharacterCursor();
+        }
+        protected override void OnClientSizeChanged(EventArgs e){base.OnClientSizeChanged(e);Reflow();}
+        protected override void OnScroll(ScrollEventArgs se){base.OnScroll(se);Invalidate(true);}
+        protected override void OnLocationChanged(EventArgs e){
+            base.OnLocationChanged(e);
+            if(!preview&&!fitting&&Visible&&IsHandleCreated&&Screen.FromHandle(Handle).WorkingArea!=lastWorkArea)QueueFit();
+        }
+        void QueueFit(){
+            if(preview||fitQueued||!IsHandleCreated||IsDisposed)return;
+            fitQueued=true;
+            BeginInvoke((MethodInvoker)delegate{
+                fitQueued=false;if(IsDisposed||!IsHandleCreated)return;
+                FitToMonitor(false);Reflow();ApplyCharacterCursor();
+            });
+        }
+        void FitToMonitor(bool initial){
+            if(fitting||WindowState!=FormWindowState.Normal)return;
+            fitting=true;
+            try{
+                Rectangle work=Screen.FromHandle(Handle).WorkingArea;lastWorkArea=work;
+                Size frame=SizeFromClientSize(Size.Empty);
+                int margin=SettingsLayout.Scale(12,DeviceDpi);
+                Size usable=new Size(Math.Max(1,work.Width-frame.Width-2*margin),Math.Max(1,work.Height-frame.Height-2*margin));
+                MinimumSize=new Size(Math.Min(usable.Width,SettingsLayout.Scale(430,DeviceDpi))+frame.Width,
+                    Math.Min(usable.Height,SettingsLayout.Scale(320,DeviceDpi))+frame.Height);
+                Size target=initial?SettingsLayout.DesignSize:ClientSize;
+                if(initial)target=new Size(SettingsLayout.Scale(target.Width,DeviceDpi),SettingsLayout.Scale(target.Height,DeviceDpi));
+                ClientSize=new Size(Math.Min(target.Width,usable.Width),Math.Min(target.Height,usable.Height));
+                int x=initial?work.Left+(work.Width-Width)/2:Left;
+                int y=initial?work.Top+(work.Height-Height)/2:Top;
+                Location=new Point(Math.Max(work.Left,Math.Min(x,work.Right-Width)),Math.Max(work.Top,Math.Min(y,work.Bottom-Height)));
+            }finally{fitting=false;}
+        }
+        void Reflow(){
+            if(designBounds==null||applyingLayout||IsDisposed||ClientSize.Width<=0||ClientSize.Height<=0)return;
+            applyingLayout=true;
+            try{
+                // Scrollbar appearance can change the available client width. Reflow against the final viewport.
+                for(int pass=0;pass<3;pass++){
+                    Size before=ClientSize;
+                    layout=new SettingsLayout(before,DeviceDpi);
+                    SuspendLayout();
+                    try{
+                        AutoScrollMinSize=new Size(0,layout.ScrollHeight);
+                        Point offset=AutoScrollPosition;
+                        foreach(var entry in designBounds){
+                            Rectangle bounds=layout.Place(entry.Value);
+                            bounds.Offset(offset);
+                            var combo=entry.Key as ComboBox;
+                            int itemHeight=SettingsLayout.Scale(24,DeviceDpi);
+                            if(combo!=null&&combo.ItemHeight!=itemHeight)combo.ItemHeight=itemHeight;
+                            entry.Key.Bounds=bounds;
+                        }
+                    }finally{ResumeLayout(true);}
+                    if(before==ClientSize)break;
+                }
+                Invalidate(true);
+            }finally{applyingLayout=false;}
         }
         ComboBox CreateThemePicker(string name,int x,int y,int width,string id,string fallback){
             var picker=new ComboBox{Name=name,Location=new Point(x,y),Width=width,DropDownStyle=ComboBoxStyle.DropDownList};
@@ -163,24 +246,37 @@ namespace ZlhrsHelper {
             characterCursor=next;CharacterCursor.Apply(this,next.Value);
             if(previous!=null){if(System.Windows.Forms.Cursor.Current!=null&&System.Windows.Forms.Cursor.Current.Handle==previous.Value.Handle)System.Windows.Forms.Cursor.Current=next.Value;previous.Dispose();}
         }
-        protected override void OnDpiChanged(DpiChangedEventArgs e){base.OnDpiChanged(e);ApplyCharacterCursor();}
+        protected override void OnDpiChanged(DpiChangedEventArgs e){
+            base.OnDpiChanged(e);
+            if(preview){Reflow();ApplyCharacterCursor();}else QueueFit();
+        }
         protected override void OnPaintBackground(PaintEventArgs e){
             base.OnPaintBackground(e);
-            if(wallpaperImage==null||mainPalette==null)return;
+            if(wallpaperImage==null||mainPalette==null||layout==null)return;
             var saved=e.Graphics.Save();
             try{
-                float scale=e.Graphics.DpiX/96f;
-                e.Graphics.TranslateTransform(AutoScrollPosition.X,AutoScrollPosition.Y);e.Graphics.ScaleTransform(scale,scale);
+                float scale=DeviceDpi/96f;
+                e.Graphics.ScaleTransform(scale,scale);
                 e.Graphics.InterpolationMode=InterpolationMode.HighQualityBicubic;
-                e.Graphics.DrawImage(wallpaperImage,new Rectangle(450,0,540,810));
-                using(var fade=new LinearGradientBrush(new Rectangle(450,0,280,810),mainPalette.Background,Color.FromArgb(0,mainPalette.Background),LinearGradientMode.Horizontal)){
-                    fade.InterpolationColors=new ColorBlend{Positions=new[]{0f,.6f,1f},Colors=new[]{mainPalette.Background,Color.FromArgb(245,mainPalette.Background),Color.FromArgb(0,mainPalette.Background)}};
-                    e.Graphics.FillRectangle(fade,450,0,280,810);
+                Rectangle art=layout.Portrait(wallpaperImage.Size);
+                if(layout.HasSideArt){
+                    e.Graphics.DrawImage(wallpaperImage,art);
+                    int width=Math.Min(280,art.Width);
+                    using(var fade=new LinearGradientBrush(new Rectangle(art.Left,0,width,art.Height),mainPalette.Background,Color.FromArgb(0,mainPalette.Background),LinearGradientMode.Horizontal)){
+                        fade.InterpolationColors=new ColorBlend{Positions=new[]{0f,.6f,1f},Colors=new[]{mainPalette.Background,Color.FromArgb(245,mainPalette.Background),Color.FromArgb(0,mainPalette.Background)}};
+                        e.Graphics.FillRectangle(fade,art.Left,0,width,art.Height);
+                    }
+                }else{
+                    using(var tint=new ImageAttributes()){
+                        tint.SetColorMatrix(new ColorMatrix{Matrix33=.22f});
+                        e.Graphics.DrawImage(wallpaperImage,art,0,0,wallpaperImage.Width,wallpaperImage.Height,GraphicsUnit.Pixel,tint);
+                    }
                 }
                 var cardColor=Color.FromArgb((mainPalette.Background.R+mainPalette.Surface.R)/2,(mainPalette.Background.G+mainPalette.Surface.G)/2,(mainPalette.Background.B+mainPalette.Surface.B)/2);
                 var cards=new[]{new Rectangle(20,78,616,140),new Rectangle(20,220,616,151),new Rectangle(20,377,616,69),new Rectangle(20,452,616,126),new Rectangle(20,586,616,91)};
+                e.Graphics.TranslateTransform(AutoScrollPosition.X/scale,AutoScrollPosition.Y/scale);
                 using(var fill=new SolidBrush(cardColor))using(var border=new Pen(Color.FromArgb(85,mainPalette.Border)))foreach(var card in cards)
-                    using(var shape=Shapes.Round(card,13)){e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;e.Graphics.FillPath(fill,shape);e.Graphics.DrawPath(border,shape);}
+                    using(var shape=Shapes.Round(layout.LogicalBounds(card),13)){e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;e.Graphics.FillPath(fill,shape);e.Graphics.DrawPath(border,shape);}
             }finally{e.Graphics.Restore(saved);}
         }
         protected override void Dispose(bool disposing){
@@ -235,11 +331,12 @@ namespace ZlhrsHelper {
             }
         }
         protected override void WndProc(ref Message m){
+            if(m.Msg==0x007E)QueueFit();
             if(m.Msg==Native.WM_HOTKEY){int id=m.WParam.ToInt32();if(id==1)StartCapture();else if(id==2)Toggle();else if(id==3)Cancel(true);else if(id==4)ShowSettings();return;}base.WndProc(ref m);
         }
         async void StartCapture(){await CaptureAsync();}
         void Toggle(){if(capturing)mini.WantedVisible=!mini.WantedVisible;else mini.SetVisible(!mini.WantedVisible);}
-        void ShowSettings(){Show();WindowState=FormWindowState.Normal;Activate();UpdateProtection();}
+        void ShowSettings(){Show();WindowState=FormWindowState.Normal;FitToMonitor(false);Activate();UpdateProtection();}
         void Cancel(bool clear){
             generation++;if(request!=null)request.Cancel();
             if(clear)mini.SetAnswer("Ответ очищен. Сделайте новый снимок экрана.","ZlhrsHelper");

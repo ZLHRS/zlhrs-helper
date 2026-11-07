@@ -312,6 +312,43 @@ namespace ZlhrsHelper {
                     Assert(bitmap.GetPixel(0,0).A==0&&bitmap.GetPixel(bitmap.Width-1,bitmap.Height-1).A==0,"Opaque cursor sprite background: "+palette.Id);
                 }
             });
+            Check("Settings resize on short and narrow screens without losing controls",()=>{
+                using(var form=new MainForm(true)){
+                    form.StartPosition=FormStartPosition.Manual;form.Location=new Point(-30000,-30000);form.Show();
+                    var key=form.Controls.OfType<TextBox>().Single(c=>c.UseSystemPasswordChar);
+                    var save=form.Controls.OfType<Button>().Single(c=>c.Text=="Сохранить");
+                    var model=(ComboBox)form.Controls["Model"];
+                    key.Text="resize-test-placeholder";model.Text="gemini-resize-test";
+                    foreach(var logical in new[]{new Size(990,810),new Size(990,630),new Size(620,550),new Size(430,350),new Size(990,810)}){
+                        form.AutoScrollPosition=Point.Empty;
+                        form.ClientSize=new Size(SettingsLayout.Scale(logical.Width,form.DeviceDpi),SettingsLayout.Scale(logical.Height,form.DeviceDpi));
+                        form.PerformLayout();Application.DoEvents();
+                        Assert(!form.HorizontalScroll.Visible,"Horizontal scrolling on "+logical);
+                        var items=form.Controls.Cast<Control>().Where(c=>c.Visible&&(!String.IsNullOrEmpty(c.Text)||c is PaletteSlider)).ToArray();
+                        foreach(Control item in items)Assert(item.Left>=0&&item.Right<=form.ClientSize.Width,"Control clipped on "+logical+": "+item.GetType().Name);
+                        for(int a=0;a<items.Length;a++)for(int b=a+1;b<items.Length;b++)
+                            Assert(!items[a].Bounds.IntersectsWith(items[b].Bounds),"Controls overlap on "+logical+": "+items[a].GetType().Name+"/"+items[b].GetType().Name);
+                        if(logical.Height>=630)Assert(form.ClientRectangle.Contains(save.Bounds),"Save is hidden at laptop height");
+                        form.ScrollControlIntoView(save);Application.DoEvents();
+                        Assert(form.ClientRectangle.Contains(save.Bounds),"Save cannot be reached on "+logical);
+                        Assert(key.Text=="resize-test-placeholder"&&model.Text=="gemini-resize-test","Resize lost typed settings");
+                    }
+                    form.Close();
+                }
+            });
+            Check("Full HD work area fits settings at common DPI scales",()=>{
+                foreach(int dpi in new[]{96,120,144,192}){
+                    Size viewport=new Size(Math.Min(SettingsLayout.Scale(990,dpi),1870),Math.Min(SettingsLayout.Scale(810,dpi),946));
+                    var layout=new SettingsLayout(viewport,dpi);
+                    Rectangle save=layout.Place(new Rectangle(30,700,240,40));
+                    Rectangle settings=layout.Place(new Rectangle(20,78,616,140));
+                    Assert(save.Width>0&&save.Right<viewport.Width&&settings.Right<viewport.Width,"Fields overflow at DPI "+dpi);
+                    Assert(save.Bottom<=layout.ScrollHeight,"Save lies outside scrollable content at DPI "+dpi);
+                    if(dpi<=144)Assert(save.Bottom<=viewport.Height,"Save not immediately visible at DPI "+dpi);
+                    Rectangle art=layout.Portrait(new Size(1024,1536));
+                    Assert(Math.Abs(art.Width*1.5-art.Height)<2,"Wallpaper aspect ratio changed at DPI "+dpi);
+                }
+            });
             report.Add("RESULT: "+(report.Count-1-failed)+" passed, "+failed+" failed.");
             report.Add("Live API access, answer accuracy, and third-party recording/streaming compatibility are NOT verified.");
             File.WriteAllLines(Path.GetFullPath(path),report,Encoding.UTF8);return failed==0?0:1;

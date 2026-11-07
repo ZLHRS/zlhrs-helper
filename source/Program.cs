@@ -27,7 +27,11 @@ namespace ZlhrsHelper {
                 using(var form=new MainForm(true)){
                     if(args.Length>2)((ComboBox)form.Controls["MainTheme"]).SelectedItem=Palette.Find(args[2],"green");
                     if(args.Length>3)((ComboBox)form.Controls["AnswerTheme"]).SelectedItem=Palette.Find(args[3],"light");
-                    form.StartPosition=FormStartPosition.Manual;form.Location=new Point(-30000,-30000);form.Show();form.PerformLayout();Application.DoEvents();
+                    form.StartPosition=FormStartPosition.Manual;form.Location=new Point(-30000,-30000);form.Show();
+                    int previewWidth,previewHeight;
+                    if(args.Length>6&&Int32.TryParse(args[5],out previewWidth)&&Int32.TryParse(args[6],out previewHeight)&&previewWidth>=300&&previewHeight>=240)
+                        form.ClientSize=new Size(SettingsLayout.Scale(previewWidth,form.DeviceDpi),SettingsLayout.Scale(previewHeight,form.DeviceDpi));
+                    form.PerformLayout();Application.DoEvents();
                     using(var bitmap=new Bitmap(form.Width,form.Height)){
                         form.DrawToBitmap(bitmap,new Rectangle(Point.Empty,form.Size));
                         if(args.Length>4&&args[4]=="cursor")using(var g=Graphics.FromImage(bitmap))form.Cursor.DrawStretched(g,new Rectangle(655,320,48,48));
