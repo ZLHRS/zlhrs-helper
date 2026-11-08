@@ -349,6 +349,44 @@ namespace ZlhrsHelper {
                     Assert(Math.Abs(art.Width*1.5-art.Height)<2,"Wallpaper aspect ratio changed at DPI "+dpi);
                 }
             });
+            Check("Key slots preserve legacy encryption and stay separate by provider",()=>{
+                var settings=Json.New().Deserialize<Settings>("{\"Provider\":\"OpenAI\"}");
+                settings.SetKey("legacy-slot-test");settings.SetKey(1,"second-slot-test");settings.SetKey(2,"third-slot-test");
+                settings.KeySlot=1;settings.AutoRotate=true;
+                settings.Provider="Gemini";settings.SetKey(2,"gemini-slot-test");settings.KeySlot=2;
+                string json=Json.New().Serialize(settings);
+                Assert(!json.Contains("slot-test"),"Plaintext key reached settings");
+                var loaded=Json.New().Deserialize<Settings>(json);
+                Assert(loaded.Key=="gemini-slot-test"&&!loaded.AutoRotate,"Gemini preferences lost");
+                loaded.Provider="OpenAI";
+                Assert(loaded.Key=="second-slot-test"&&loaded.AutoRotate&&loaded.GetKey(0)=="legacy-slot-test","OpenAI preferences lost");
+                Assert(ApiThrottle.NextSlot(loaded.GetKeys(),1)==2&&ApiThrottle.NextSlot(loaded.GetKeys(),2)==0,"Slot cycle incorrect");
+            });
+            Check("Rate limit fallback tries distinct slots in order and waits",()=>{
+                var used=new List<string>();var waits=new List<TimeSpan>();
+                int slot=ApiThrottle.WithSlots(new[]{"one","two","three"},0,true,(key,token)=>{
+                    used.Add(key);if(key!="three")throw new TemporaryRateLimit("test",TimeSpan.FromSeconds(3));
+                    return Task.FromResult(0);
+                },CancellationToken.None,(delay,token)=>{waits.Add(delay);return Task.FromResult(0);}).GetAwaiter().GetResult();
+                Assert(slot==2&&used.SequenceEqual(new[]{"one","two","three"})&&waits.SequenceEqual(new[]{TimeSpan.FromSeconds(3),TimeSpan.FromSeconds(3)}),"Retry order or server delay lost");
+                int attempts=0;
+                Throws(()=>ApiThrottle.WithSlots(new[]{"one","one",""},0,true,(key,token)=>{attempts++;throw new TemporaryRateLimit("limited",null);},CancellationToken.None).GetAwaiter().GetResult(),"limited");
+                Assert(attempts==1,"Duplicate key retried");
+                Throws(()=>ApiThrottle.WithSlots(new[]{"one","two","three"},0,false,(key,token)=>{attempts++;throw new TemporaryRateLimit("disabled",null);},CancellationToken.None).GetAwaiter().GetResult(),"disabled");
+                Assert(attempts==2,"Rotation ran while disabled");
+            });
+            Check("429 classifier separates temporary throttling from quota and billing",()=>{
+                using(var response=new HttpResponseMessage((HttpStatusCode)429)){
+                    response.Headers.RetryAfter=new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(12));
+                    var transient=ApiThrottle.Error(response,"{\"error\":{\"code\":\"rate_limit_exceeded\"}}","test",true) as TemporaryRateLimit;
+                    Assert(transient!=null&&transient.RetryAfter==TimeSpan.FromSeconds(12),"OpenAI delay missing");
+                    Assert(!(ApiThrottle.Error(response,"{\"error\":{\"code\":\"insufficient_quota\",\"type\":\"rate_limit_error\"}}","test",true) is TemporaryRateLimit),"Billing misclassified");
+                    Assert(!(ApiThrottle.Error(response,"{\"error\":{\"status\":\"RESOURCE_EXHAUSTED\"}}","test",false) is TemporaryRateLimit),"Unknown Gemini quota misclassified");
+                    var minute="{\"error\":{\"status\":\"RESOURCE_EXHAUSTED\",\"details\":[{\"violations\":[{\"quotaId\":\"GenerateRequestsPerMinutePerProject\",\"quotaValue\":\"10\"}]}]}}";
+                    Assert(ApiThrottle.Error(response,minute,"test",false) is TemporaryRateLimit,"Gemini RPM not identified");
+                    Assert(!(ApiThrottle.Error(response,minute.Replace("PerMinute","PerDay"),"test",false) is TemporaryRateLimit),"Daily quota misclassified");
+                }
+            });
             report.Add("RESULT: "+(report.Count-1-failed)+" passed, "+failed+" failed.");
             report.Add("Live API access, answer accuracy, and third-party recording/streaming compatibility are NOT verified.");
             File.WriteAllLines(Path.GetFullPath(path),report,Encoding.UTF8);return failed==0?0:1;

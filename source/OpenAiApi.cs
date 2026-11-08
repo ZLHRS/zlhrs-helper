@@ -38,7 +38,7 @@ namespace ZlhrsHelper {
                 message.Content=new StringContent(payload,Encoding.UTF8,"application/json");
                 using(var response=await client.SendAsync(message,token).ConfigureAwait(false)){
                     string data=await response.Content.ReadAsStringAsync().ConfigureAwait(false);token.ThrowIfCancellationRequested();
-                    if(!response.IsSuccessStatusCode)throw new InvalidOperationException(Error((int)response.StatusCode,data,key));
+                    if(!response.IsSuccessStatusCode)throw ApiThrottle.Error(response,data,Error((int)response.StatusCode,data,key),true);
                     return Parse(data);
                 }
             }

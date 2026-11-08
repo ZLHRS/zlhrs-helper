@@ -53,8 +53,39 @@ namespace ZlhrsHelper {
             string tmp=FilePath+".tmp";File.WriteAllText(tmp,Json.New().Serialize(this),Encoding.UTF8);
             if(File.Exists(FilePath))File.Replace(tmp,FilePath,null);else File.Move(tmp,FilePath);
         }
-        internal string Key { get { string value=Provider=="OpenAI"?OpenAiProtectedKey:ProtectedKey;return String.IsNullOrEmpty(value)?"":Encoding.UTF8.GetString(ProtectedData.Unprotect(Convert.FromBase64String(value),null,DataProtectionScope.CurrentUser)); } }
-        internal void SetKey(string key){string value=String.IsNullOrWhiteSpace(key)?"":Convert.ToBase64String(ProtectedData.Protect(Encoding.UTF8.GetBytes(key.Trim()),null,DataProtectionScope.CurrentUser));if(Provider=="OpenAI")OpenAiProtectedKey=value;else ProtectedKey=value;}
+        public string[] GeminiExtraKeys,OpenAiExtraKeys;
+        public int GeminiSlot,OpenAiSlot;
+        public bool GeminiAutoRotate,OpenAiAutoRotate;
+        internal const int SlotCount=3;
+        internal int KeySlot {
+            get{return Math.Max(0,Math.Min(SlotCount-1,Provider=="OpenAI"?OpenAiSlot:GeminiSlot));}
+            set{if(value<0||value>=SlotCount)throw new ArgumentOutOfRangeException("value");if(Provider=="OpenAI")OpenAiSlot=value;else GeminiSlot=value;}
+        }
+        internal bool AutoRotate {
+            get{return Provider=="OpenAI"?OpenAiAutoRotate:GeminiAutoRotate;}
+            set{if(Provider=="OpenAI")OpenAiAutoRotate=value;else GeminiAutoRotate=value;}
+        }
+        internal string Key {get{return GetKey(KeySlot);}}
+        internal void SetKey(string key){SetKey(KeySlot,key);}
+        internal string GetKey(int slot){
+            bool open=Provider=="OpenAI";
+            var extra=open?OpenAiExtraKeys:GeminiExtraKeys;
+            string value=slot==0?(open?OpenAiProtectedKey:ProtectedKey):extra!=null&&slot<=extra.Length?extra[slot-1]:null;
+            return String.IsNullOrEmpty(value)?"":Encoding.UTF8.GetString(ProtectedData.Unprotect(Convert.FromBase64String(value),null,DataProtectionScope.CurrentUser));
+        }
+        internal string[] GetKeys(){
+            return Enumerable.Range(0,SlotCount).Select(i=>{
+                try{return GetKey(i);}catch(CryptographicException){return "";}catch(FormatException){return "";}
+            }).ToArray();
+        }
+        internal void SetKey(int slot,string key){
+            bool open=Provider=="OpenAI";
+            string value=String.IsNullOrWhiteSpace(key)?"":Convert.ToBase64String(ProtectedData.Protect(Encoding.UTF8.GetBytes(key.Trim()),null,DataProtectionScope.CurrentUser));
+            if(slot==0){if(open)OpenAiProtectedKey=value;else ProtectedKey=value;return;}
+            var extra=open?OpenAiExtraKeys:GeminiExtraKeys;
+            if(extra==null||extra.Length!=SlotCount-1)Array.Resize(ref extra,SlotCount-1);
+            extra[slot-1]=value;if(open)OpenAiExtraKeys=extra;else GeminiExtraKeys=extra;
+        }
     }
     internal static class Json {
         internal static JavaScriptSerializer New(){return new JavaScriptSerializer{MaxJsonLength=32*1024*1024,RecursionLimit=100};}
@@ -117,7 +148,7 @@ namespace ZlhrsHelper {
                         string data=await response.Content.ReadAsStringAsync().ConfigureAwait(false);token.ThrowIfCancellationRequested();
                         if(response.IsSuccessStatusCode)return Parse(data);
                         retry=(int)response.StatusCode==503&&attempt<2;
-                        if(!retry)throw new InvalidOperationException(Error((int)response.StatusCode,data,key));
+                        if(!retry)throw ApiThrottle.Error(response,data,Error((int)response.StatusCode,data,key),false);
                     }
                 }
                 // Bound retries to 3 total attempts, within the overall 90-second timeout.

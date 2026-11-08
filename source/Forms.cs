@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Diagnostics;
+using System.IO;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Threading;
@@ -102,7 +104,9 @@ namespace ZlhrsHelper {
             Controls.Add(SettingsTheme.Label("Провайдер API",390,12,234,22,9,SettingsTheme.Muted));
             provider=new ComboBox{Name="Provider",Location=new Point(390,38),Width=234,DropDownStyle=ComboBoxStyle.DropDownList,BackColor=SettingsTheme.Surface,ForeColor=SettingsTheme.Text};
             provider.Items.AddRange(new[]{"OpenAI","Gemini"});provider.SelectedItem=settings.Provider=="OpenAI"?"OpenAI":"Gemini";Controls.Add(provider);
-            keyLabel=SettingsTheme.Label("",30,88,500,24,9,SettingsTheme.Muted);Controls.Add(keyLabel);
+            keyLabel=SettingsTheme.Label("",30,88,290,24,9,SettingsTheme.Muted);Controls.Add(keyLabel);
+            var editKeys=SettingsTheme.Button("Ключи…",328,82,128,false);editKeys.Height=28;editKeys.Click+=(s,e)=>EditKeys();Controls.Add(editKeys);
+            var nextKey=SettingsTheme.Button("Следующий ключ",466,82,158,false);nextKey.Height=28;nextKey.Click+=(s,e)=>NextKey();Controls.Add(nextKey);
             key=new TextBox{Location=new Point(30,115),Size=new Size(594,30),UseSystemPasswordChar=true,BackColor=SettingsTheme.Surface,ForeColor=SettingsTheme.Text,BorderStyle=BorderStyle.FixedSingle};
             try{key.Text=settings.Key;}catch{warning="Сохранённый ключ недоступен. Введите его заново.";}Controls.Add(key);
             Controls.Add(SettingsTheme.Label("Модель",30,155,594,24,10,SettingsTheme.Muted));
@@ -121,7 +125,8 @@ namespace ZlhrsHelper {
             opacityLabel=SettingsTheme.Label("",30,594,594,24,10,SettingsTheme.Muted);Controls.Add(opacityLabel);
             opacity=new PaletteSlider{Location=new Point(25,623),Width=599,Minimum=0,Maximum=100,Value=Math.Max(0,Math.Min(100,settings.Opacity)),BackColor=SettingsTheme.Background};
             opacity.ValueChanged+=(s,e)=>{mini.SetOpacity(opacity.Value);UpdateOpacityLabel();};Controls.Add(opacity);UpdateOpacityLabel();
-            protection=SettingsTheme.Label("",30,665,594,24,10,SettingsTheme.Text);Controls.Add(protection);
+            protection=SettingsTheme.Label("",30,665,425,24,10,SettingsTheme.Text);Controls.Add(protection);
+            var update=SettingsTheme.Button("Обновить",465,665,159,false);update.Height=28;update.Click+=(s,e)=>StartUpdate();Controls.Add(update);
             var save=SettingsTheme.Button("Сохранить",30,700,240,true);save.Tag="primary";save.Click+=(s,e)=>{if(ApplySettings()){Hide();mini.SetVisible(true);}};Controls.Add(save);
             var show=SettingsTheme.Button("Показать ответ",282,700,213,false);show.Click+=(s,e)=>mini.SetVisible(true);Controls.Add(show);
             var demo=SettingsTheme.Button("Демо",507,700,117,false);demo.Click+=(s,e)=>Demo();Controls.Add(demo);
@@ -293,13 +298,62 @@ namespace ZlhrsHelper {
             if(draft.Provider=="OpenAI")draft.OpenAiModel=model.Text.Trim();else draft.Model=model.Text.Trim();
         }
         void LoadProvider(){
-            keyLabel.Text="Ключ "+draft.Provider+" API";
-            try{key.Text=draft.Key;}catch{key.Text="";}
+            LoadKeyField();
             model.Items.Clear();
             if(draft.Provider=="OpenAI")model.Items.AddRange(new[]{"gpt-4.1-mini","gpt-4.1","gpt-5-mini","gpt-5.2","gpt-6-luna","gpt-6-sol","gpt-6-astra","gpt-6.1-sol"});
             else model.Items.AddRange(new[]{Settings.DefaultModel,"gemini-3.6-flash","gemini-3.8-flash","gemini-4-argon"});
             model.Text=draft.ActiveModel;
         }
+        void LoadKeyField(){
+            keyLabel.Text=draft.Provider+" · ключ "+(draft.KeySlot+1)+"/"+Settings.SlotCount+(draft.AutoRotate?" · авто":"");
+            try{key.Text=draft.Key;}catch{key.Text="";}
+        }
+        void EditKeys(){
+            try{
+                draft.SetKey(key.Text);
+                using(var editor=new KeyEditor(draft.Provider,draft.GetKeys(),draft.KeySlot,draft.AutoRotate)){
+                    if(editor.ShowDialog(this)!=DialogResult.OK)return;
+                    var next=Json.New().Deserialize<Settings>(Json.New().Serialize(settings));
+                    string providerInUse=next.Provider;next.Provider=draft.Provider;
+                    string[] keys=editor.Keys;int chosen=editor.SelectedSlot;
+                    if(String.IsNullOrEmpty(keys[chosen])){int available=Array.FindIndex(keys,k=>k.Length>0);if(available>=0)chosen=available;}
+                    for(int i=0;i<keys.Length;i++)next.SetKey(i,keys[i]);
+                    next.KeySlot=chosen;next.AutoRotate=editor.AutoRotate;
+                    next.Provider=providerInUse;if(!preview)next.Save();settings=next;
+                    for(int i=0;i<keys.Length;i++)draft.SetKey(i,keys[i]);
+                    draft.KeySlot=chosen;draft.AutoRotate=editor.AutoRotate;LoadKeyField();
+                    state.Text="Ключи сохранены. Активный слот: "+(chosen+1)+".";
+                }
+            }catch(Exception){state.Text="Не удалось сохранить ключи. Проверьте настройки Windows.";}
+        }
+        void NextKey(){
+            try{
+                var next=Json.New().Deserialize<Settings>(Json.New().Serialize(settings));
+                string providerInUse=next.Provider;next.Provider=draft.Provider;
+                int slot=ApiThrottle.NextSlot(next.GetKeys(),next.KeySlot);
+                if(slot==next.KeySlot){state.Text="Добавьте ещё один ключ через «Ключи…».";return;}
+                draft.SetKey(key.Text);
+                next.KeySlot=slot;next.Provider=providerInUse;if(!preview)next.Save();settings=next;
+                draft.KeySlot=slot;LoadKeyField();state.Text=draft.Provider+" · активный слот "+(slot+1)+".";
+            }catch(Exception){state.Text="Не удалось переключить ключ.";}
+        }
+        void StartUpdate(){
+            if(preview)return;
+            string root=AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+            string script=Path.Combine(root,"Update.ps1");
+            if((!Directory.Exists(Path.Combine(root,".git"))&&!File.Exists(Path.Combine(root,".git")))||!File.Exists(script)){
+                state.Text="Для обновления нужна папка, полученная через git clone.";return;
+            }
+            if(MessageBox.Show(this,"Приложение закроется, чтобы Git мог заменить EXE. Несохранённые настройки будут потеряны. Продолжить?","Обновить из GitHub",MessageBoxButtons.OKCancel,MessageBoxIcon.Question)!=DialogResult.OK)return;
+            try{
+                var info=new ProcessStartInfo(Path.Combine(Environment.SystemDirectory,@"WindowsPowerShell\v1.0\powershell.exe"),
+                    "-NoProfile -ExecutionPolicy Bypass -STA -File "+QuoteArgument(script)+" -WaitForProcess "+Process.GetCurrentProcess().Id);
+                info.UseShellExecute=false;info.CreateNoWindow=true;info.WorkingDirectory=Environment.SystemDirectory;
+                using(var helper=Process.Start(info)){if(helper==null)throw new InvalidOperationException();}
+                closing=true;Close();
+            }catch(Exception){state.Text="Не удалось запустить обновление.";}
+        }
+        static string QuoteArgument(string path){return "\""+path+"\"";}
         void UpdateProtection(){
             IntPtr ignored=mini.Handle;
             protection.Text=CaptureExcluded&&mini.CaptureExcluded?"":"Исключение из захвата недоступно.";
@@ -347,10 +401,11 @@ namespace ZlhrsHelper {
         }
         async Task CaptureAsync(){
             if(capturing)return;
-            string apiKey;
-            try{apiKey=settings.Key;}catch{ShowSettings();state.Text="Введите ключ API заново.";return;}
-            if(String.IsNullOrWhiteSpace(apiKey)){ShowSettings();state.Text="Сначала введите ключ API и сохраните настройки.";return;}
-            string apiProvider=settings.Provider,apiModel=settings.ActiveModel,prompt=settings.SystemPrompt;
+            var snapshot=settings;
+            string[] apiKeys;
+            try{apiKeys=snapshot.GetKeys();}catch{ShowSettings();state.Text="Проверьте ключи в настройках.";return;}
+            if(Array.TrueForAll(apiKeys,String.IsNullOrEmpty)){ShowSettings();state.Text="Сначала добавьте API-ключ.";return;}
+            string apiProvider=snapshot.Provider,apiModel=snapshot.ActiveModel,prompt=snapshot.SystemPrompt;
             capturing=true;Cancel(false);int version=generation;
             var cts=new CancellationTokenSource();request=cts;
             try{
@@ -366,12 +421,27 @@ namespace ZlhrsHelper {
                 DateTime capturedAt=DateTime.Now;
                 mini.SetAnswer("Читаю вопрос и варианты на снимке…","Обработка · "+capturedAt.ToString("HH:mm:ss"));
                 capturing=false;
-                var result=apiProvider=="OpenAI"
-                    ?await OpenAiApi.SolveAsync(apiKey,OpenAiApi.Request(apiModel,image,prompt),cts.Token)
-                    :await VisionApi.SolveAsync(apiKey,VisionApi.Request(apiModel,image,prompt),cts.Token,apiModel);
+                bool openAi=apiProvider=="OpenAI";
+                string payload=openAi?OpenAiApi.Request(apiModel,image,prompt):VisionApi.Request(apiModel,image,prompt);
+                AnalysisResult result=null;int usedSlot;
+                using(var timeout=CancellationTokenSource.CreateLinkedTokenSource(cts.Token)){
+                    timeout.CancelAfter(TimeSpan.FromSeconds(90));
+                    usedSlot=await ApiThrottle.WithSlots(apiKeys,snapshot.KeySlot,snapshot.AutoRotate,async (apiKey,token)=>{
+                        result=openAi?await OpenAiApi.SolveAsync(apiKey,payload,token).ConfigureAwait(false)
+                            :await VisionApi.SolveAsync(apiKey,payload,token,apiModel).ConfigureAwait(false);
+                    },timeout.Token);
+                }
                 if(version!=generation||cts.IsCancellationRequested||IsDisposed)return;
+                if(ReferenceEquals(settings,snapshot)&&usedSlot!=snapshot.KeySlot){
+                    int previousSlot=snapshot.KeySlot;
+                    snapshot.KeySlot=usedSlot;
+                    try{snapshot.Save();}catch(IOException){}catch(UnauthorizedAccessException){}
+                    if(draft.Provider==apiProvider&&draft.KeySlot==previousSlot&&key.Text==apiKeys[previousSlot]){
+                        draft.KeySlot=usedSlot;LoadKeyField();
+                    }
+                }
                 mini.SetAnswer(VisionApi.Display(result),"Снимок "+capturedAt.ToString("HH:mm:ss")+" · ответ ИИ");
-                state.Text="Ответ готов. "+Bind(1)+" открывает мини-окно.";
+                state.Text="Ответ готов · слот "+(usedSlot+1)+". "+Bind(1)+" открывает мини-окно.";
             }catch(OperationCanceledException){
                 if(version==generation&&!IsDisposed)mini.SetAnswer("Время ожидания истекло или запрос отменён. Повторите снимок.","ZlhrsHelper · ожидание завершено");
             }catch(Exception ex){
