@@ -51,18 +51,22 @@ namespace ZlhrsHelper {
             }
             return temporary?new TemporaryRateLimit(message,after):new InvalidOperationException(message);
         }
+        internal static int FirstSlot(string[] keys,int slot){
+            return String.IsNullOrEmpty(keys[slot])?NextSlot(keys,slot):slot;
+        }
         internal static int NextSlot(string[] keys,int slot){
             for(int step=1;step<keys.Length;step++){
                 int index=(slot+step)%keys.Length;if(!String.IsNullOrEmpty(keys[index])&&keys[index]!=keys[slot])return index;
             }
             return slot;
         }
-        internal static async Task<int> WithSlots(string[] keys,int first,bool rotate,Func<string,CancellationToken,Task> send,CancellationToken token,Func<TimeSpan,CancellationToken,Task> delay=null){
+        internal static async Task<int> WithSlots(string[] keys,int first,bool rotate,Func<string,CancellationToken,Task> send,CancellationToken token,Func<TimeSpan,CancellationToken,Task> delay=null,Action<int> onAttempt=null){
             int[] order=Enumerable.Range(0,keys.Length).Select(i=>(first+i)%keys.Length).Where(i=>!String.IsNullOrEmpty(keys[i])).GroupBy(i=>keys[i],StringComparer.Ordinal).Select(g=>g.First()).ToArray();
             if(order.Length==0)throw new InvalidOperationException("Добавьте API-ключ в настройках.");
             for(int i=0;;i++){
                 token.ThrowIfCancellationRequested();
                 TimeSpan wait;
+                if(onAttempt!=null)onAttempt(order[i]);
                 try{await send(keys[order[i]],token).ConfigureAwait(false);return order[i];}
                 catch(TemporaryRateLimit ex){
                     if(!rotate||i+1==order.Length)throw;

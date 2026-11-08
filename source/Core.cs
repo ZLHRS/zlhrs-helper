@@ -31,7 +31,12 @@ namespace ZlhrsHelper {
         public int HotkeyIndex=0;
         public int Opacity=88;
         public HotkeyChord[] Hotkeys;
-        internal HotkeyChord[] GetHotkeys(){return Hotkeys??new[]{new HotkeyChord(HotkeyIndex==2?6u:3u,HotkeyIndex==2?119u:HotkeyIndex==1?87u:81u),new HotkeyChord(3,65),new HotkeyChord(3,88),new HotkeyChord(3,83)};}
+        internal HotkeyChord[] GetHotkeys(){
+            var defaults=new[]{new HotkeyChord(HotkeyIndex==2?6u:3u,HotkeyIndex==2?119u:HotkeyIndex==1?87u:81u),new HotkeyChord(3,65),new HotkeyChord(3,88),new HotkeyChord(3,83),null};
+            if(Hotkeys==null)return defaults;
+            if(Hotkeys.Length==4){Array.Copy(Hotkeys,defaults,4);return defaults;}
+            return Hotkeys;
+        }
         internal static string FilePath { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"ZlhrsHelper","settings.json"); } }
         internal static Settings FromLegacy(string json){
             var legacy=Json.New().Deserialize<Settings>(json)??new Settings();
@@ -56,6 +61,11 @@ namespace ZlhrsHelper {
         public string[] GeminiExtraKeys,OpenAiExtraKeys;
         public int GeminiSlot,OpenAiSlot;
         public bool GeminiAutoRotate,OpenAiAutoRotate;
+        public bool GeminiRotateEachRequest,OpenAiRotateEachRequest;
+        internal bool RotateEachRequest {
+            get{return Provider=="OpenAI"?OpenAiRotateEachRequest:GeminiRotateEachRequest;}
+            set{if(Provider=="OpenAI")OpenAiRotateEachRequest=value;else GeminiRotateEachRequest=value;}
+        }
         internal const int SlotCount=3;
         internal int KeySlot {
             get{return Math.Max(0,Math.Min(SlotCount-1,Provider=="OpenAI"?OpenAiSlot:GeminiSlot));}

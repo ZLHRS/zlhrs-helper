@@ -129,7 +129,7 @@ namespace ZlhrsHelper {
             Check("Custom hotkeys and model survive serialization",()=>{
                 var cfg=new Settings{Model="gemini-4-argon",Opacity=0,Hotkeys=new[]{new HotkeyChord(6,121),new HotkeyChord(0,120),new HotkeyChord(10,75),new HotkeyChord(7,83)}};
                 var restored=Json.New().Deserialize<Settings>(Json.New().Serialize(cfg));HotkeyChord.Validate(restored.GetHotkeys());Assert(restored.Model==cfg.Model&&restored.Opacity==0&&restored.Hotkeys[2].ToString()=="Ctrl + Win + K","Settings not retained");
-                restored.Hotkeys[1]=restored.Hotkeys[0];Throws(()=>HotkeyChord.Validate(restored.Hotkeys),"своя комбинация");
+                restored.Hotkeys[1]=restored.Hotkeys[0];Throws(()=>HotkeyChord.Validate(restored.GetHotkeys()),"своя комбинация");
             });
             Check("Hotkey editor records arbitrary chord",()=>{
                 using(var box=new HotkeyBox(new HotkeyChord(3,81))){
@@ -148,7 +148,7 @@ namespace ZlhrsHelper {
                 }
             });
             Check("Gemini models and four independent binding editors",()=>{
-                using(var form=new MainForm(true)){var choices=form.Controls.OfType<ComboBox>().Single(c=>c.Name=="Model");Assert(choices.Items.Contains("gemini-4-argon")&&choices.Text==Settings.DefaultModel,"Model list or default changed");Assert(form.Controls.OfType<HotkeyBox>().Count()==4,"Missing binding editors");}
+                using(var form=new MainForm(true)){var choices=form.Controls.OfType<ComboBox>().Single(c=>c.Name=="Model");Assert(choices.Items.Contains("gemini-4-argon")&&choices.Text==Settings.DefaultModel,"Model list or default changed");Assert(form.Controls.OfType<HotkeyBox>().Count()==5,"Missing binding editors");}
                 var payload=Json.New().DeserializeObject(VisionApi.Request("gemini-4-argon",image)) as Dictionary<string,object>;Assert(payload.ContainsKey("contents"),"Gemini request missing");
             });
             Check("System prompt persists multiline Unicode and old settings stay empty",()=>{
@@ -352,14 +352,14 @@ namespace ZlhrsHelper {
             Check("Key slots preserve legacy encryption and stay separate by provider",()=>{
                 var settings=Json.New().Deserialize<Settings>("{\"Provider\":\"OpenAI\"}");
                 settings.SetKey("legacy-slot-test");settings.SetKey(1,"second-slot-test");settings.SetKey(2,"third-slot-test");
-                settings.KeySlot=1;settings.AutoRotate=true;
+                settings.KeySlot=1;settings.AutoRotate=true;settings.RotateEachRequest=true;
                 settings.Provider="Gemini";settings.SetKey(2,"gemini-slot-test");settings.KeySlot=2;
                 string json=Json.New().Serialize(settings);
                 Assert(!json.Contains("slot-test"),"Plaintext key reached settings");
                 var loaded=Json.New().Deserialize<Settings>(json);
-                Assert(loaded.Key=="gemini-slot-test"&&!loaded.AutoRotate,"Gemini preferences lost");
+                Assert(loaded.Key=="gemini-slot-test"&&!loaded.AutoRotate&&!loaded.RotateEachRequest,"Gemini preferences lost");
                 loaded.Provider="OpenAI";
-                Assert(loaded.Key=="second-slot-test"&&loaded.AutoRotate&&loaded.GetKey(0)=="legacy-slot-test","OpenAI preferences lost");
+                Assert(loaded.Key=="second-slot-test"&&loaded.AutoRotate&&loaded.RotateEachRequest&&loaded.GetKey(0)=="legacy-slot-test","OpenAI preferences lost");
                 Assert(ApiThrottle.NextSlot(loaded.GetKeys(),1)==2&&ApiThrottle.NextSlot(loaded.GetKeys(),2)==0,"Slot cycle incorrect");
             });
             Check("Rate limit fallback tries distinct slots in order and waits",()=>{
@@ -386,6 +386,25 @@ namespace ZlhrsHelper {
                     Assert(ApiThrottle.Error(response,minute,"test",false) is TemporaryRateLimit,"Gemini RPM not identified");
                     Assert(!(ApiThrottle.Error(response,minute.Replace("PerMinute","PerDay"),"test",false) is TemporaryRateLimit),"Daily quota misclassified");
                 }
+            });
+            Check("Request rotation cycles active credentials and skips gaps",()=>{
+                var keys=new[]{"first","","third"};
+                int slot=ApiThrottle.FirstSlot(keys,1);
+                var attempted=new List<int>();
+                for(int i=0;i<4;i++){
+                    int used=ApiThrottle.WithSlots(keys,slot,false,(key,token)=>Task.FromResult(0),CancellationToken.None,
+                        onAttempt:n=>attempted.Add(n)).GetAwaiter().GetResult();
+                    slot=ApiThrottle.NextSlot(keys,used);
+                }
+                Assert(attempted.SequenceEqual(new[]{2,0,2,0}),"Rotation lost order or used an empty slot");
+            });
+            Check("Existing hotkeys gain an optional next-key binding without changing old chords",()=>{
+                var settings=new Settings{Hotkeys=new[]{new HotkeyChord(3,81),new HotkeyChord(3,65),new HotkeyChord(3,88),new HotkeyChord(3,83)}};
+                var migrated=settings.GetHotkeys();
+                Assert(migrated.Length==5&&migrated[4]==null&&migrated.Take(4).SequenceEqual(settings.Hotkeys),"Existing binds changed");
+                HotkeyChord.Validate(migrated);
+                migrated[4]=new HotkeyChord(3,75);HotkeyChord.Validate(migrated);
+                migrated[4]=migrated[0];Throws(()=>HotkeyChord.Validate(migrated),"своя комбинация");
             });
             report.Add("RESULT: "+(report.Count-1-failed)+" passed, "+failed+" failed.");
             report.Add("Live API access, answer accuracy, and third-party recording/streaming compatibility are NOT verified.");

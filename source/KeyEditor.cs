@@ -7,12 +7,13 @@ namespace ZlhrsHelper {
     internal sealed class KeyEditor : PrivateForm {
         readonly TextBox[] fields=new TextBox[Settings.SlotCount];
         readonly RadioButton[] slots=new RadioButton[Settings.SlotCount];
-        readonly CheckBox rotate;
+        readonly CheckBox rotate,rotateEach;
         internal string[] Keys {get{return fields.Select(f=>f.Text.Trim()).ToArray();}}
         internal int SelectedSlot {get{return Array.FindIndex(slots,r=>r.Checked);}}
         internal bool AutoRotate {get{return rotate.Checked;}}
-        internal KeyEditor(string provider,string[] keys,int active,bool autoRotate){
-            SuspendLayout();Text="Ключи "+provider;ClientSize=new Size(490,238);StartPosition=FormStartPosition.CenterParent;
+        internal bool RotateEachRequest {get{return rotateEach.Checked;}}
+        internal KeyEditor(string provider,string[] keys,int active,bool autoRotate,bool rotateEachRequest){
+            SuspendLayout();Text="Ключи "+provider;ClientSize=new Size(490,268);StartPosition=FormStartPosition.CenterParent;
             FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=false;MinimizeBox=false;ShowInTaskbar=false;
             Font=new Font("Segoe UI",10);
             Controls.Add(new Label{Text="Отметьте активный слот и введите ключи.",Location=new Point(16,13),Size=new Size(455,24)});
@@ -23,8 +24,10 @@ namespace ZlhrsHelper {
             }
             rotate=new CheckBox{Text="Автопереключение при временном лимите",Checked=autoRotate,Location=new Point(16,154),Size=new Size(455,27)};
             Controls.Add(rotate);
-            var save=new Button{Text="Сохранить ключи",DialogResult=DialogResult.OK,Location=new Point(176,194),Size=new Size(167,31)};
-            var cancel=new Button{Text="Отмена",DialogResult=DialogResult.Cancel,Location=new Point(352,194),Size=new Size(120,31)};
+            rotateEach=new CheckBox{Text="Менять ключ после каждого запроса",Checked=rotateEachRequest,Location=new Point(16,184),Size=new Size(455,27)};
+            Controls.Add(rotateEach);
+            var save=new Button{Text="Сохранить ключи",DialogResult=DialogResult.OK,Location=new Point(176,224),Size=new Size(167,31)};
+            var cancel=new Button{Text="Отмена",DialogResult=DialogResult.Cancel,Location=new Point(352,224),Size=new Size(120,31)};
             Controls.Add(save);Controls.Add(cancel);AcceptButton=save;CancelButton=cancel;
             AutoScaleDimensions=new SizeF(96,96);AutoScaleMode=AutoScaleMode.Dpi;ResumeLayout(true);
         }
