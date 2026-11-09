@@ -33,13 +33,7 @@ namespace ZlhrsHelper {
                 var label=control as Label;
                 if(label!=null){label.BackColor=Color.Transparent;label.ForeColor=Equals(label.Tag,"accent")?Accent:Equals(label.Tag,"text")?Text:Muted;}
                 var button=control as Button;
-                if(button!=null){
-                    bool primary=Equals(button.Tag,"primary");button.UseVisualStyleBackColor=false;
-                    button.BackColor=primary?Accent:Surface;button.ForeColor=primary?AccentText:Text;
-                    button.FlatAppearance.BorderColor=Border;
-                    button.FlatAppearance.MouseOverBackColor=ControlPaint.Light(button.BackColor,.12f);
-                    button.FlatAppearance.MouseDownBackColor=ControlPaint.Dark(button.BackColor,.12f);
-                }
+                if(button!=null)ApplyButton(button);
                 if(control is TextBoxBase||control is ComboBox){control.BackColor=Surface;control.ForeColor=Text;}
                 var combo=control as ComboBox;
                 if(combo!=null){combo.FlatStyle=FlatStyle.Flat;combo.ItemHeight=24*combo.DeviceDpi/96;combo.DrawMode=DrawMode.OwnerDrawFixed;combo.DrawItem-=DrawCombo;combo.DrawItem+=DrawCombo;}
@@ -47,6 +41,14 @@ namespace ZlhrsHelper {
                 if(slider!=null){slider.BackColor=Color.FromArgb((Background.R+Surface.R)/2,(Background.G+Surface.G)/2,(Background.B+Surface.B)/2);slider.Accent=Accent;slider.Track=Border;slider.Invalidate();}
             }
             root.Invalidate(true);
+        }
+        internal void ApplyButton(Button button){
+            bool primary=Equals(button.Tag,"primary");button.UseVisualStyleBackColor=false;
+            button.BackColor=primary?Accent:Surface;button.ForeColor=primary?AccentText:Text;
+            button.FlatAppearance.BorderColor=Border;
+            button.FlatAppearance.MouseOverBackColor=ControlPaint.Light(button.BackColor,.12f);
+            button.FlatAppearance.MouseDownBackColor=ControlPaint.Dark(button.BackColor,.12f);
+            button.Invalidate();
         }
         static void DrawCombo(object sender,DrawItemEventArgs e){
             var combo=(ComboBox)sender;var palette=combo.Tag as Palette;

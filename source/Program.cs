@@ -23,6 +23,16 @@ namespace ZlhrsHelper {
                 }
                 return 0;
             }
+            if(args.Length>1&&args[0]=="--render-key-editor"){
+                using(var form=new KeyEditor("Gemini",new[]{"sample","","sample"},0,false,true,Palette.Find("pink","green"))){
+                    form.StartPosition=FormStartPosition.Manual;form.Location=new Point(-30000,-30000);
+                    form.Show();form.PerformLayout();Application.DoEvents();
+                    using(var bitmap=new Bitmap(form.Width,form.Height)){
+                        form.DrawToBitmap(bitmap,new Rectangle(Point.Empty,form.Size));bitmap.Save(Path.GetFullPath(args[1]));
+                    }
+                }
+                return 0;
+            }
             if(args.Length>1&&args[0]=="--render-preview"){
                 using(var form=new MainForm(true)){
                     if(args.Length>2)((ComboBox)form.Controls["MainTheme"]).SelectedItem=Palette.Find(args[2],"green");
@@ -31,6 +41,8 @@ namespace ZlhrsHelper {
                     int previewWidth,previewHeight;
                     if(args.Length>6&&Int32.TryParse(args[5],out previewWidth)&&Int32.TryParse(args[6],out previewHeight)&&previewWidth>=300&&previewHeight>=240)
                         form.ClientSize=new Size(SettingsLayout.Scale(previewWidth,form.DeviceDpi),SettingsLayout.Scale(previewHeight,form.DeviceDpi));
+                    int previewPage;
+                    if(args.Length>7&&Int32.TryParse(args[7],out previewPage))form.SelectPage(previewPage);
                     form.PerformLayout();Application.DoEvents();
                     using(var bitmap=new Bitmap(form.Width,form.Height)){
                         form.DrawToBitmap(bitmap,new Rectangle(Point.Empty,form.Size));

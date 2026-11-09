@@ -312,7 +312,7 @@ namespace ZlhrsHelper {
                     Assert(bitmap.GetPixel(0,0).A==0&&bitmap.GetPixel(bitmap.Width-1,bitmap.Height-1).A==0,"Opaque cursor sprite background: "+palette.Id);
                 }
             });
-            Check("Settings resize on short and narrow screens without losing controls",()=>{
+            Check("Settings pages resize and preserve drafts without losing controls",()=>{
                 using(var form=new MainForm(true)){
                     form.StartPosition=FormStartPosition.Manual;form.Location=new Point(-30000,-30000);form.Show();
                     var key=form.Controls.OfType<TextBox>().Single(c=>c.UseSystemPasswordChar);
@@ -322,7 +322,9 @@ namespace ZlhrsHelper {
                     foreach(var logical in new[]{new Size(990,810),new Size(990,630),new Size(620,550),new Size(430,350),new Size(990,810)}){
                         form.AutoScrollPosition=Point.Empty;
                         form.ClientSize=new Size(SettingsLayout.Scale(logical.Width,form.DeviceDpi),SettingsLayout.Scale(logical.Height,form.DeviceDpi));
-                        form.PerformLayout();Application.DoEvents();
+                        for(int page=0;page<3;page++){
+                        form.SelectPage(page);form.PerformLayout();Application.DoEvents();
+                        Assert(key.Visible==(page==0)&&form.Controls["MainTheme"].Visible==(page==1)&&form.Controls.OfType<HotkeyBox>().All(box=>box.Visible==(page==2)),"Controls leaked between pages");
                         Assert(!form.HorizontalScroll.Visible,"Horizontal scrolling on "+logical);
                         var items=form.Controls.Cast<Control>().Where(c=>c.Visible&&(!String.IsNullOrEmpty(c.Text)||c is PaletteSlider)).ToArray();
                         foreach(Control item in items)Assert(item.Left>=0&&item.Right<=form.ClientSize.Width,"Control clipped on "+logical+": "+item.GetType().Name);
@@ -331,7 +333,8 @@ namespace ZlhrsHelper {
                         if(logical.Height>=630)Assert(form.ClientRectangle.Contains(save.Bounds),"Save is hidden at laptop height");
                         form.ScrollControlIntoView(save);Application.DoEvents();
                         Assert(form.ClientRectangle.Contains(save.Bounds),"Save cannot be reached on "+logical);
-                        Assert(key.Text=="resize-test-placeholder"&&model.Text=="gemini-resize-test","Resize lost typed settings");
+                        Assert(key.Text=="resize-test-placeholder"&&model.Text=="gemini-resize-test","Resize or navigation lost typed settings");
+                        }
                     }
                     form.Close();
                 }
@@ -340,8 +343,8 @@ namespace ZlhrsHelper {
                 foreach(int dpi in new[]{96,120,144,192}){
                     Size viewport=new Size(Math.Min(SettingsLayout.Scale(990,dpi),1870),Math.Min(SettingsLayout.Scale(810,dpi),946));
                     var layout=new SettingsLayout(viewport,dpi);
-                    Rectangle save=layout.Place(new Rectangle(30,700,240,40));
-                    Rectangle settings=layout.Place(new Rectangle(20,78,616,140));
+                    Rectangle save=layout.Place(new Rectangle(30,531,220,42));
+                    Rectangle settings=layout.Place(new Rectangle(20,238,616,153));
                     Assert(save.Width>0&&save.Right<viewport.Width&&settings.Right<viewport.Width,"Fields overflow at DPI "+dpi);
                     Assert(save.Bottom<=layout.ScrollHeight,"Save lies outside scrollable content at DPI "+dpi);
                     if(dpi<=144)Assert(save.Bottom<=viewport.Height,"Save not immediately visible at DPI "+dpi);

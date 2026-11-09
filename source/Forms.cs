@@ -65,7 +65,7 @@ namespace ZlhrsHelper {
     }
     internal static class SettingsTheme {
         internal static Color Background=Color.FromArgb(8,13,10),Surface=Color.FromArgb(17,27,20),Text=Color.FromArgb(203,239,213),Muted=Color.FromArgb(140,181,150),Accent=Color.FromArgb(89,247,135);
-        internal static Label Label(string text,int x,int y,int w,int h,float size,Color color){return new Label{Text=text,Location=new Point(x,y),Size=new Size(w,h),Font=new Font("Segoe UI",size,size>=24?FontStyle.Bold:FontStyle.Regular),ForeColor=color,BackColor=Color.Transparent,Tag=color==Accent?"accent":color==Text?"text":"muted"};}
+        internal static Label Label(string text,int x,int y,int w,int h,float size,Color color){return new Label{Text=text,Location=new Point(x,y),Size=new Size(w,h),Font=new Font("Segoe UI",size,size>=16?FontStyle.Bold:FontStyle.Regular),ForeColor=color,BackColor=Color.Transparent,Tag=color==Accent?"accent":color==Text?"text":"muted"};}
         internal static Button Button(string text,int x,int y,int w,bool primary){var b=new RoundedButton{Text=text,Location=new Point(x,y),Size=new Size(w,40),FlatStyle=FlatStyle.Flat,BackColor=primary?Accent:Surface,ForeColor=primary?Background:Text,Cursor=Cursors.Hand,Font=new Font("Segoe UI",10,FontStyle.Bold)};b.FlatAppearance.BorderSize=1;b.FlatAppearance.BorderColor=Color.FromArgb(48,99,62);b.FlatAppearance.MouseOverBackColor=primary?Color.FromArgb(125,255,161):Color.FromArgb(28,49,34);return b;}
     }
     internal sealed class MainForm : PrivateForm {
@@ -86,6 +86,14 @@ namespace ZlhrsHelper {
         Palette mainPalette;
         CharacterCursor characterCursor;
         Dictionary<Control,Rectangle> designBounds;
+        readonly Dictionary<Control,int> pages=new Dictionary<Control,int>();
+        readonly Button[] pageTabs=new Button[3];
+        int activePage;
+        static readonly Rectangle[][] PageCards={
+            new[]{new Rectangle(20,238,616,153),new Rectangle(20,402,616,111)},
+            new[]{new Rectangle(20,238,616,117),new Rectangle(20,368,616,137)},
+            new[]{new Rectangle(20,238,616,265)}
+        };
         SettingsLayout layout;
         Rectangle lastWorkArea;
         bool applyingLayout, fitting, fitQueued;
@@ -100,46 +108,62 @@ namespace ZlhrsHelper {
             string warning="";
             try{settings=preview?new Settings():Settings.Load();}catch{settings=new Settings();warning="Настройки не удалось прочитать. Введите ключ заново.";}
             draft=Json.New().Deserialize<Settings>(Json.New().Serialize(settings));
-            Controls.Add(SettingsTheme.Label("by ZLHRS",28,20,340,45,28,SettingsTheme.Accent));
-            Controls.Add(SettingsTheme.Label("Провайдер API",390,12,234,22,9,SettingsTheme.Muted));
-            provider=new ComboBox{Name="Provider",Location=new Point(390,38),Width=234,DropDownStyle=ComboBoxStyle.DropDownList,BackColor=SettingsTheme.Surface,ForeColor=SettingsTheme.Text};
-            provider.Items.AddRange(new[]{"OpenAI","Gemini"});provider.SelectedItem=settings.Provider=="OpenAI"?"OpenAI":"Gemini";Controls.Add(provider);
-            keyLabel=SettingsTheme.Label("",30,88,290,24,9,SettingsTheme.Muted);Controls.Add(keyLabel);
-            var editKeys=SettingsTheme.Button("Ключи…",328,82,128,false);editKeys.Height=28;editKeys.Click+=(s,e)=>EditKeys();Controls.Add(editKeys);
-            var nextKey=SettingsTheme.Button("Следующий ключ",466,82,158,false);nextKey.Height=28;nextKey.Click+=(s,e)=>NextKey(draft.Provider);Controls.Add(nextKey);
-            key=new TextBox{Location=new Point(30,115),Size=new Size(594,30),UseSystemPasswordChar=true,BackColor=SettingsTheme.Surface,ForeColor=SettingsTheme.Text,BorderStyle=BorderStyle.FixedSingle};
-            try{key.Text=settings.Key;}catch{warning="Сохранённый ключ недоступен. Введите его заново.";}Controls.Add(key);
-            Controls.Add(SettingsTheme.Label("Модель",30,155,594,24,10,SettingsTheme.Muted));
-            model=new ComboBox{Name="Model",Location=new Point(30,182),Width=594,DropDownStyle=ComboBoxStyle.DropDown,BackColor=SettingsTheme.Surface,ForeColor=SettingsTheme.Text};
-            Controls.Add(model);LoadProvider();
+            Caption(-1,"Z L H R S   /   H E L P E R",30,18,420,20,9,SettingsTheme.Accent);
+            Caption(-1,"Настройки",28,39,444,51,28,SettingsTheme.Text);
+            AddButton(-1,"Обновить",488,45,136,32,false,StartUpdate);
+            string[] tabNames={"API и ключи","Оформление","Горячие клавиши"};
+            for(int i=0;i<pageTabs.Length;i++){
+                int page=i;
+                pageTabs[i]=AddButton(-1,tabNames[i],30+202*i,102,190,38,i==0,()=>SelectPage(page));
+                pageTabs[i].AccessibleName="Раздел: "+tabNames[i];
+            }
+            PageHeading(0,"Подключение API","Выберите провайдера, модель и ключ для запросов.");
+            Caption(0,"Провайдер",34,251,282,22);
+            Caption(0,"Модель",330,251,294,22);
+            provider=OnPage(0,new ComboBox{Name="Provider",Location=new Point(34,275),Width=282,DropDownStyle=ComboBoxStyle.DropDownList});
+            provider.Items.AddRange(new[]{ "OpenAI","Gemini" });provider.SelectedItem=settings.Provider=="OpenAI"?"OpenAI":"Gemini";
+            model=OnPage(0,new ComboBox{Name="Model",Location=new Point(330,275),Width=294,DropDownStyle=ComboBoxStyle.DropDown});
+            keyLabel=Caption(0,"",34,318,280,23,10,SettingsTheme.Text);
+            AddButton(0,"Слоты ключей",326,313,132,30,false,EditKeys);
+            AddButton(0,"Следующий ключ",468,313,156,30,false,()=>NextKey(draft.Provider));
+            key=OnPage(0,new TextBox{Location=new Point(34,353),Width=590,UseSystemPasswordChar=true,BorderStyle=BorderStyle.FixedSingle,AccessibleName="Активный ключ API"});
+            try{key.Text=settings.Key;}catch{warning="Сохранённый ключ недоступен. Введите его заново.";}
+            LoadProvider();
             provider.SelectedIndexChanged+=(s,e)=>{StoreProvider();draft.Provider=provider.Text;LoadProvider();};
-            string[] names={"Снимок → ответ","Скрыть / показать ответ","Отмена и очистка","Открыть настройки"};
+            Caption(0,"Системный промпт",34,414,590,22,10,SettingsTheme.Text);
+            systemPrompt=OnPage(0,new TextBox{Text=settings.SystemPrompt??"",Name="SystemPrompt",Location=new Point(34,440),Size=new Size(590,68),Multiline=true,AcceptsReturn=true,ScrollBars=ScrollBars.Vertical,MaxLength=200000,BorderStyle=BorderStyle.FixedSingle});
+
+            PageHeading(1,"Внешний вид","Выберите тему для каждого окна и настройте прозрачность ответа.");
+            Caption(1,"Основное окно",34,254,282,22,10,SettingsTheme.Text);
+            Caption(1,"Окно ответа",330,254,294,22,10,SettingsTheme.Text);
+            mainTheme=CreateThemePicker("MainTheme",34,281,282,settings.MainTheme,"green");
+            answerTheme=CreateThemePicker("AnswerTheme",330,281,294,settings.AnswerTheme,"light");
+            Caption(1,"Темы применяются сразу. Сохраните выбор перед выходом.",34,320,590,26,9);
+            opacityLabel=Caption(1,"",34,384,590,24,11,SettingsTheme.Text);
+            opacity=OnPage(1,new PaletteSlider{Location=new Point(30,415),Width=594,Minimum=0,Maximum=100,Value=Math.Max(0,Math.Min(100,settings.Opacity))});
+            opacity.ValueChanged+=(s,e)=>{mini.SetOpacity(opacity.Value);UpdateOpacityLabel();};UpdateOpacityLabel();
+            Caption(1,"При 0% окно ответа полностью скрыто.",34,468,590,25,9);
+            mainTheme.SelectedIndexChanged+=(s,e)=>{draft.MainTheme=((Palette)mainTheme.SelectedItem).Id;ApplyMainTheme();};
+            answerTheme.SelectedIndexChanged+=(s,e)=>{draft.AnswerTheme=((Palette)answerTheme.SelectedItem).Id;mini.SetTheme(draft.AnswerTheme);};
+
+            PageHeading(2,"Горячие клавиши","Нажмите на поле, введите комбинацию и сохраните настройки.");
+            string[] names={"Снимок → ответ","Показать / скрыть ответ","Отмена и очистка","Открыть настройки","Следующий ключ API"};
             var chords=settings.GetHotkeys();
             for(int i=0;i<hotkeys.Length;i++){
-                bool nextSlot=i==HotkeyChord.NextKeyId-1;
-                int x=nextSlot?330:i%2==0?30:330,y=nextSlot?594:458+(i/2)*63;
-                Controls.Add(SettingsTheme.Label(nextSlot?"Следующий ключ API":names[i],x,y,294,22,10,SettingsTheme.Muted));
-                var box=new HotkeyBox(chords[i],nextSlot){Location=new Point(x,y+25),Width=294,BackColor=SettingsTheme.Surface,ForeColor=SettingsTheme.Text,BorderStyle=BorderStyle.FixedSingle};hotkeys[i]=box;Controls.Add(box);
+                int x=i%2==0?34:330,y=253+(i/2)*67,w=i%2==0?282:294;
+                Caption(2,names[i],x,y,w,23,10,SettingsTheme.Text);
+                var box=OnPage(2,new HotkeyBox(chords[i],i==HotkeyChord.NextKeyId-1){Location=new Point(x,y+27),Width=w,BorderStyle=BorderStyle.FixedSingle,AccessibleName=names[i]});
+                hotkeys[i]=box;
                 box.Enter+=(s,e)=>{if(!preview)UnregisterKeys();};
                 box.Leave+=(s,e)=>{if(!preview){try{RegisterKeys(settings.GetHotkeys());}catch(Exception ex){state.Text=ex.Message;}}};
             }
-            opacityLabel=SettingsTheme.Label("",30,594,290,24,10,SettingsTheme.Muted);Controls.Add(opacityLabel);
-            opacity=new PaletteSlider{Location=new Point(25,623),Width=292,Minimum=0,Maximum=100,Value=Math.Max(0,Math.Min(100,settings.Opacity)),BackColor=SettingsTheme.Background};
-            opacity.ValueChanged+=(s,e)=>{mini.SetOpacity(opacity.Value);UpdateOpacityLabel();};Controls.Add(opacity);UpdateOpacityLabel();
-            protection=SettingsTheme.Label("",30,665,425,24,10,SettingsTheme.Text);Controls.Add(protection);
-            var update=SettingsTheme.Button("Обновить",465,665,159,false);update.Height=28;update.Click+=(s,e)=>StartUpdate();Controls.Add(update);
-            var save=SettingsTheme.Button("Сохранить",30,700,240,true);save.Tag="primary";save.Click+=(s,e)=>{if(ApplySettings()){Hide();mini.SetVisible(true);}};Controls.Add(save);
-            var show=SettingsTheme.Button("Показать ответ",282,700,213,false);show.Click+=(s,e)=>mini.SetVisible(true);Controls.Add(show);
-            var demo=SettingsTheme.Button("Демо",507,700,117,false);demo.Click+=(s,e)=>Demo();Controls.Add(demo);
-            state=SettingsTheme.Label(warning,30,757,594,45,10,SettingsTheme.Text);Controls.Add(state);
-            Controls.Add(SettingsTheme.Label("Системный промпт",30,224,594,24,10,SettingsTheme.Text));
-            systemPrompt=new TextBox{Text=settings.SystemPrompt??"",Name="SystemPrompt",Location=new Point(30,252),Size=new Size(594,110),Multiline=true,AcceptsReturn=true,ScrollBars=ScrollBars.Vertical,MaxLength=200000,BackColor=SettingsTheme.Surface,ForeColor=SettingsTheme.Text,BorderStyle=BorderStyle.FixedSingle};Controls.Add(systemPrompt);
-            Controls.Add(SettingsTheme.Label("Тема основного окна",30,383,284,22,10,SettingsTheme.Muted));
-            Controls.Add(SettingsTheme.Label("Тема окна ответа",330,383,294,22,10,SettingsTheme.Muted));
-            mainTheme=CreateThemePicker("MainTheme",30,408,284,settings.MainTheme,"green");
-            answerTheme=CreateThemePicker("AnswerTheme",330,408,294,settings.AnswerTheme,"light");
-            mainTheme.SelectedIndexChanged+=(s,e)=>{draft.MainTheme=((Palette)mainTheme.SelectedItem).Id;ApplyMainTheme();};
-            answerTheme.SelectedIndexChanged+=(s,e)=>{draft.AnswerTheme=((Palette)answerTheme.SelectedItem).Id;mini.SetTheme(draft.AnswerTheme);};
+            Caption(2,"Backspace снимает привязку «Следующий ключ API».",34,468,590,27,9);
+            AddButton(-1,"Сохранить",30,531,220,42,true,()=>{if(ApplySettings()){Hide();mini.SetVisible(true);}});
+            AddButton(-1,"Показать ответ",262,531,215,42,false,()=>mini.SetVisible(true));
+            AddButton(-1,"Демо",489,531,135,42,false,Demo);
+            state=Caption(-1,warning,30,584,594,33,9,SettingsTheme.Text);
+            protection=Caption(-1,"",30,619,594,21,9,SettingsTheme.Text);
+            SelectPage(0);
             ApplyMainTheme();mini.SetTheme(((Palette)answerTheme.SelectedItem).Id);
             tray=new NotifyIcon{Icon=Branding.Icon,Text=Branding.Name,Visible=!preview};
             // Menus are separate top-level native windows; protect their handles as well.
@@ -166,6 +190,36 @@ namespace ZlhrsHelper {
             AutoScroll=true;
             AutoScaleDimensions=new SizeF(96,96);AutoScaleMode=AutoScaleMode.Dpi;
             ResumeLayout(true);Reflow();
+        }
+        T OnPage<T>(int page,T control) where T:Control{
+            Controls.Add(control);if(page>=0)pages.Add(control,page);
+            return control;
+        }
+        Label Caption(int page,string text,int x,int y,int w,int h,float size=10,Color? color=null){
+            return OnPage(page,SettingsTheme.Label(text,x,y,w,h,size,color??SettingsTheme.Muted));
+        }
+        Button AddButton(int page,string text,int x,int y,int w,int h,bool primary,Action action){
+            var button=SettingsTheme.Button(text,x,y,w,primary);
+            button.Height=h;button.Tag=primary?"primary":null;button.Click+=(s,e)=>action();
+            return OnPage(page,button);
+        }
+        void PageHeading(int page,string title,string description){
+            Caption(page,title,30,163,594,35,20,SettingsTheme.Text);
+            Caption(page,description,30,202,594,32,10);
+        }
+        internal void SelectPage(int page){
+            if(page<0||page>=pageTabs.Length)return;
+            activePage=page;
+            SuspendLayout();
+            try{
+                AutoScrollPosition=Point.Empty;
+                foreach(var entry in pages)entry.Key.Visible=entry.Value==page;
+                for(int i=0;i<pageTabs.Length;i++){
+                    pageTabs[i].Tag=i==page?"primary":null;
+                    if(mainPalette!=null)mainPalette.ApplyButton(pageTabs[i]);
+                }
+            }finally{ResumeLayout(true);}
+            Reflow();Invalidate(true);
         }
         protected override void OnLoad(EventArgs e){
             base.OnLoad(e);
@@ -232,7 +286,7 @@ namespace ZlhrsHelper {
         }
         ComboBox CreateThemePicker(string name,int x,int y,int width,string id,string fallback){
             var picker=new ComboBox{Name=name,Location=new Point(x,y),Width=width,DropDownStyle=ComboBoxStyle.DropDownList};
-            picker.Items.AddRange(Palette.All);picker.SelectedItem=Palette.Find(id,fallback);Controls.Add(picker);return picker;
+            picker.Items.AddRange(Palette.All);picker.SelectedItem=Palette.Find(id,fallback);return OnPage(1,picker);
         }
         void ApplyMainTheme(){
             var palette=(Palette)mainTheme.SelectedItem;
@@ -277,9 +331,13 @@ namespace ZlhrsHelper {
                         tint.SetColorMatrix(new ColorMatrix{Matrix33=.22f});
                         e.Graphics.DrawImage(wallpaperImage,art,0,0,wallpaperImage.Width,wallpaperImage.Height,GraphicsUnit.Pixel,tint);
                     }
+                    int fadeWidth=Math.Min(112,art.Width);
+                    var edge=new Rectangle(art.Left,0,fadeWidth,art.Height);
+                    using(var fade=new LinearGradientBrush(edge,mainPalette.Background,Color.FromArgb(0,mainPalette.Background),LinearGradientMode.Horizontal))
+                        e.Graphics.FillRectangle(fade,edge);
                 }
                 var cardColor=Color.FromArgb((mainPalette.Background.R+mainPalette.Surface.R)/2,(mainPalette.Background.G+mainPalette.Surface.G)/2,(mainPalette.Background.B+mainPalette.Surface.B)/2);
-                var cards=new[]{new Rectangle(20,78,616,140),new Rectangle(20,220,616,151),new Rectangle(20,377,616,69),new Rectangle(20,452,616,126),new Rectangle(20,586,616,91)};
+                var cards=PageCards[activePage];
                 e.Graphics.TranslateTransform(AutoScrollPosition.X/scale,AutoScrollPosition.Y/scale);
                 using(var fill=new SolidBrush(cardColor))using(var border=new Pen(Color.FromArgb(85,mainPalette.Border)))foreach(var card in cards)
                     using(var shape=Shapes.Round(layout.LogicalBounds(card),13)){e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;e.Graphics.FillPath(fill,shape);e.Graphics.DrawPath(border,shape);}
@@ -312,7 +370,7 @@ namespace ZlhrsHelper {
         void EditKeys(){
             try{
                 draft.SetKey(key.Text);
-                using(var editor=new KeyEditor(draft.Provider,draft.GetKeys(),draft.KeySlot,draft.AutoRotate,draft.RotateEachRequest)){
+                using(var editor=new KeyEditor(draft.Provider,draft.GetKeys(),draft.KeySlot,draft.AutoRotate,draft.RotateEachRequest,mainPalette)){
                     if(editor.ShowDialog(this)!=DialogResult.OK)return;
                     var next=Json.New().Deserialize<Settings>(Json.New().Serialize(settings));
                     string providerInUse=next.Provider;next.Provider=draft.Provider;
@@ -332,7 +390,7 @@ namespace ZlhrsHelper {
                 var next=Json.New().Deserialize<Settings>(Json.New().Serialize(settings));
                 string providerInUse=next.Provider;next.Provider=providerName;
                 int slot=ApiThrottle.NextSlot(next.GetKeys(),next.KeySlot);
-                if(slot==next.KeySlot){state.Text="Добавьте ещё один ключ через «Ключи…».";return;}
+                if(slot==next.KeySlot){state.Text="Добавьте ещё один ключ через «Слоты ключей».";return;}
                 bool visibleProvider=draft.Provider==providerName;
                 if(visibleProvider)draft.SetKey(key.Text);
                 next.KeySlot=slot;next.Provider=providerInUse;if(!preview)next.Save();settings=next;
