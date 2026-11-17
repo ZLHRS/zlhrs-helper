@@ -185,7 +185,7 @@ namespace ZlhrsHelper {
             else if(status==401)help="Ключ API Gemini не принят. Проверьте его в настройках.";
             else if(status==403)help="Нет доступа к Gemini API. Проверьте ключ, ограничения проекта и доступность API в вашем регионе.";
             else if(status==400||status==404)help="Gemini API не принял модель или запрос. Проверьте имя модели, ключ и доступность API; причина указана ниже.";
-            else if(status==503)help="Выбранная модель Gemini перегружена (503). Попробуйте gemini-3.5-flash-lite или gemini-3.6-flash в настройках либо повторите позже. Эта ошибка не означает, что нужно пополнять баланс.";
+            else if(status==503)help="Выбранная модель Gemini перегружена (503). Повторите позже. Эта ошибка не означает, что нужно пополнять баланс.";
             else if(status>=500)help="Ошибка на стороне Gemini API. Повторите запрос позже.";
             else help="Gemini API отклонил запрос. Подробности ниже.";
             var text=new StringBuilder(help);text.Append("\n\nHTTP "+status);

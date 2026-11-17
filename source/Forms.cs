@@ -431,8 +431,10 @@ namespace ZlhrsHelper {
         void NextModel(){
             if(closing||editingKeys)return;
             try{
+                string current=settings.ActiveModel;
+                string chosen=ModelCatalog.Next(settings.Provider,current);
+                if(chosen==current){Notify("Доступна одна модель: "+current);return;}
                 var next=Json.New().Deserialize<Settings>(Json.New().Serialize(settings));
-                string chosen=ModelCatalog.Next(next.Provider,next.ActiveModel);
                 next.SetModel(chosen);
                 if(!preview)next.Save();
                 settings=next;UpdateTrayText();

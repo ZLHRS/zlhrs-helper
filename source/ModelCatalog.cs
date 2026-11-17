@@ -3,7 +3,7 @@ using System;
 namespace ZlhrsHelper {
     internal static class ModelCatalog {
         internal const string GeminiDefault="gemini-3.5-flash-lite",OpenAiDefault="gpt-6-luna";
-        static readonly string[] Gemini={GeminiDefault,"gemini-3.6-flash","gemini-3.8-flash"};
+        static readonly string[] Gemini={GeminiDefault};
         static readonly string[] OpenAi={OpenAiDefault,"gpt-6.1-terra","gpt-6.1-sol"};
         static string[] Models(string provider){return provider=="OpenAI"?OpenAi:Gemini;}
         internal static string[] Choices(string provider){return (string[])Models(provider).Clone();}
