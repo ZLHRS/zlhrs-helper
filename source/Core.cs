@@ -32,9 +32,9 @@ namespace ZlhrsHelper {
         public int Opacity=88;
         public HotkeyChord[] Hotkeys;
         internal HotkeyChord[] GetHotkeys(){
-            var defaults=new[]{new HotkeyChord(HotkeyIndex==2?6u:3u,HotkeyIndex==2?119u:HotkeyIndex==1?87u:81u),new HotkeyChord(3,65),new HotkeyChord(3,88),new HotkeyChord(3,83),null};
+            var defaults=new[]{new HotkeyChord(HotkeyIndex==2?6u:3u,HotkeyIndex==2?119u:HotkeyIndex==1?87u:81u),new HotkeyChord(3,65),new HotkeyChord(3,88),new HotkeyChord(3,83),null,null};
             if(Hotkeys==null)return defaults;
-            if(Hotkeys.Length==4){Array.Copy(Hotkeys,defaults,4);return defaults;}
+            if(Hotkeys.Length>=4&&Hotkeys.Length<defaults.Length){Array.Copy(Hotkeys,defaults,Hotkeys.Length);return defaults;}
             return Hotkeys;
         }
         internal static string FilePath { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"ZlhrsHelper","settings.json"); } }

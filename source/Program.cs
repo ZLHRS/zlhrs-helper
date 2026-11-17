@@ -1,11 +1,25 @@
 using System;
 using System.Drawing;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Windows.Forms;
 
 namespace ZlhrsHelper {
     internal static class Program {
+        internal const string InstanceMutex="Local\\ZlhrsHelper-Desktop-1";
+        internal static bool AcquireInstance(Mutex mutex,bool restarting){
+            try{return mutex.WaitOne(restarting?TimeSpan.FromSeconds(20):TimeSpan.Zero);}
+            catch(AbandonedMutexException){return true;}
+        }
+        internal static void StartReplacement(){
+            var info=new ProcessStartInfo(Application.ExecutablePath,"--restart-in-tray"){
+                UseShellExecute=true,ErrorDialog=false
+            };
+            using(var process=Process.Start(info)){
+                if(process==null||process.HasExited)throw new InvalidOperationException("Replacement did not start.");
+            }
+        }
         [STAThread]
         static int Main(string[] args) {
             Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
@@ -57,16 +71,23 @@ namespace ZlhrsHelper {
                 }
                 return 0;
             }
-            bool first;
-            using(var mutex=new Mutex(true,"Local\\ZlhrsHelper-Desktop-1",out first)) {
-                if(!first)return 0;
-                Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
-                Application.ThreadException+=(s,e)=>{
-                    using(var error=new PrivateForm{Text=Branding.Name,ClientSize=new Size(480,180),TopMost=true}){
-                        error.Controls.Add(new Label{Text="Ошибка приложения: "+e.Exception.Message,Dock=DockStyle.Fill,Padding=new Padding(16)});error.ShowDialog();
+            bool restarting=args.Length==1&&args[0]=="--restart-in-tray";
+            using(var mutex=new Mutex(false,InstanceMutex)){
+                if(!AcquireInstance(mutex,restarting))return restarting?1:0;
+                try{
+                    Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+                    Application.ThreadException+=(s,e)=>{
+                        using(var error=new PrivateForm{Text=Branding.Name,ClientSize=new Size(480,180),TopMost=true}){
+                            error.Controls.Add(new Label{Text="Ошибка приложения: "+e.Exception.Message,Dock=DockStyle.Fill,Padding=new Padding(16)});error.ShowDialog();
+                        }
+                    };
+                    using(var context=new ApplicationContext())
+                    using(var form=new MainForm(false)){
+                        form.FormClosed+=(s,e)=>context.ExitThread();
+                        form.StartInTray();
+                        Application.Run(context);
                     }
-                };
-                Application.Run(new MainForm(false));
+                }finally{mutex.ReleaseMutex();}
             }
             return 0;
         }

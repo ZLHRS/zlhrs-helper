@@ -72,13 +72,13 @@ namespace ZlhrsHelper {
         Settings settings;
         Settings draft;
         readonly TextBox key,systemPrompt;
-        readonly ComboBox model,provider,mainTheme,answerTheme; readonly HotkeyBox[] hotkeys=new HotkeyBox[HotkeyChord.NextKeyId]; readonly Label opacityLabel,keyLabel;
+        readonly ComboBox model,provider,mainTheme,answerTheme; readonly HotkeyBox[] hotkeys=new HotkeyBox[HotkeyChord.Count]; readonly Label opacityLabel,keyLabel;
         readonly PaletteSlider opacity;
         readonly Label state,protection;
         readonly NotifyIcon tray;
         readonly AnswerForm mini=new AnswerForm();
         CancellationTokenSource request;
-        bool closing,capturing;
+        bool closing,capturing,editingKeys,cleaned;
         int generation;
         readonly bool preview;
         Wallpaper wallpaper;
@@ -109,8 +109,9 @@ namespace ZlhrsHelper {
             try{settings=preview?new Settings():Settings.Load();}catch{settings=new Settings();warning="Настройки не удалось прочитать. Введите ключ заново.";}
             draft=Json.New().Deserialize<Settings>(Json.New().Serialize(settings));
             Caption(-1,"Z L H R S   /   H E L P E R",30,18,420,20,9,SettingsTheme.Accent);
-            Caption(-1,"Настройки",28,39,444,51,28,SettingsTheme.Text);
-            AddButton(-1,"Обновить",488,45,136,32,false,StartUpdate);
+            Caption(-1,"Настройки",28,39,280,51,28,SettingsTheme.Text);
+            AddButton(-1,"Обновить",326,45,134,32,false,StartUpdate);
+            AddButton(-1,"Перезапуск",470,45,154,32,false,Restart);
             string[] tabNames={"API и ключи","Оформление","Горячие клавиши"};
             for(int i=0;i<pageTabs.Length;i++){
                 int page=i;
@@ -147,17 +148,17 @@ namespace ZlhrsHelper {
             answerTheme.SelectedIndexChanged+=(s,e)=>{draft.AnswerTheme=((Palette)answerTheme.SelectedItem).Id;mini.SetTheme(draft.AnswerTheme);};
 
             PageHeading(2,"Горячие клавиши","Нажмите на поле, введите комбинацию и сохраните настройки.");
-            string[] names={"Снимок → ответ","Показать / скрыть ответ","Отмена и очистка","Открыть настройки","Следующий ключ API"};
+            string[] names={"Снимок → ответ","Показать / скрыть ответ","Отмена и очистка","Открыть настройки","Следующий ключ API","Сменить провайдера"};
             var chords=settings.GetHotkeys();
             for(int i=0;i<hotkeys.Length;i++){
                 int x=i%2==0?34:330,y=253+(i/2)*67,w=i%2==0?282:294;
                 Caption(2,names[i],x,y,w,23,10,SettingsTheme.Text);
-                var box=OnPage(2,new HotkeyBox(chords[i],i==HotkeyChord.NextKeyId-1){Location=new Point(x,y+27),Width=w,BorderStyle=BorderStyle.FixedSingle,AccessibleName=names[i]});
+                var box=OnPage(2,new HotkeyBox(chords[i],i>=HotkeyChord.NextKeyId-1){Location=new Point(x,y+27),Width=w,BorderStyle=BorderStyle.FixedSingle,AccessibleName=names[i]});
                 hotkeys[i]=box;
                 box.Enter+=(s,e)=>{if(!preview)UnregisterKeys();};
                 box.Leave+=(s,e)=>{if(!preview){try{RegisterKeys(settings.GetHotkeys());}catch(Exception ex){state.Text=ex.Message;}}};
             }
-            Caption(2,"Backspace снимает привязку «Следующий ключ API».",34,468,590,27,9);
+            Caption(2,"Backspace снимает привязку у двух нижних полей.",34,468,590,27,9);
             AddButton(-1,"Сохранить",30,531,220,42,true,()=>{if(ApplySettings()){Hide();mini.SetVisible(true);}});
             AddButton(-1,"Показать ответ",262,531,215,42,false,()=>mini.SetVisible(true));
             AddButton(-1,"Демо",489,531,135,42,false,Demo);
@@ -165,17 +166,19 @@ namespace ZlhrsHelper {
             protection=Caption(-1,"",30,619,594,21,9,SettingsTheme.Text);
             SelectPage(0);
             ApplyMainTheme();mini.SetTheme(((Palette)answerTheme.SelectedItem).Id);
-            tray=new NotifyIcon{Icon=Branding.Icon,Text=Branding.Name,Visible=!preview};
-            // Menus are separate top-level native windows; protect their handles as well.
+            tray=new NotifyIcon{Icon=Branding.Icon};
+            UpdateTrayText();
             var menu=new ContextMenuStrip{BackColor=Color.White,ForeColor=Color.Black,RenderMode=ToolStripRenderMode.System};menu.Opened+=(s,e)=>Native.Exclude(menu.Handle);
-            menu.Items.Add("Показать / скрыть ответ",null,(s,e)=>Toggle());menu.Items.Add("Настройки",null,(s,e)=>ShowSettings());menu.Items.Add("Демо без API",null,(s,e)=>Demo());menu.Items.Add(new ToolStripSeparator());menu.Items.Add("Выход",null,(s,e)=>{closing=true;Close();});tray.ContextMenuStrip=menu;tray.DoubleClick+=(s,e)=>Toggle();
+            menu.Items.Add("Настройки",null,(s,e)=>ShowSettings());
+            menu.Items.Add("Сменить провайдера",null,(s,e)=>SwitchProvider());
+            menu.Items.Add("Показать / скрыть ответ",null,(s,e)=>Toggle());
+            menu.Items.Add("Демо без API",null,(s,e)=>Demo());menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("Перезапустить",null,(s,e)=>Restart());
+            menu.Items.Add("Выход",null,(s,e)=>{closing=true;Close();});
+            tray.ContextMenuStrip=menu;tray.DoubleClick+=(s,e)=>ShowSettings();
             mini.PlaceOn(Screen.PrimaryScreen);mini.SetOpacity(settings.Opacity);
-            if(!preview)Shown+=(s,e)=>{
-                try{RegisterKeys(settings.GetHotkeys());}catch(Exception ex){state.Text=ex.Message;}
-                mini.WantedVisible=true;
-                UpdateProtection();
-            };
-            FormClosing+=(s,e)=>{if(!closing&&!preview&&e.CloseReason==CloseReason.UserClosing){e.Cancel=true;Hide();}else Cleanup();};
+            FormClosing+=(s,e)=>{if(!closing&&!preview&&e.CloseReason==CloseReason.UserClosing){e.Cancel=true;Hide();}};
+            FormClosed+=(s,e)=>Cleanup();
             if(!preview){
                 Deactivate+=(s,e)=>{if(!closing){try{RegisterKeys(settings.GetHotkeys());}catch(Exception ex){state.Text=ex.Message;}}};
                 Activated+=(s,e)=>{foreach(var box in hotkeys)if(box.Focused){UnregisterKeys();break;}};
@@ -350,6 +353,7 @@ namespace ZlhrsHelper {
                 characterCursor.Dispose();characterCursor=null;
             }
             if(disposing&&wallpaperImage!=null){wallpaperImage.Dispose();wallpaperImage=null;}
+            if(disposing&&tray!=null)Cleanup();
             base.Dispose(disposing);
         }
         void StoreProvider(){
@@ -368,6 +372,7 @@ namespace ZlhrsHelper {
             try{key.Text=draft.Key;}catch{key.Text="";}
         }
         void EditKeys(){
+            editingKeys=true;
             try{
                 draft.SetKey(key.Text);
                 using(var editor=new KeyEditor(draft.Provider,draft.GetKeys(),draft.KeySlot,draft.AutoRotate,draft.RotateEachRequest,mainPalette)){
@@ -384,6 +389,7 @@ namespace ZlhrsHelper {
                     state.Text="Ключи сохранены. Активный слот: "+(chosen+1)+".";
                 }
             }catch(Exception){state.Text="Не удалось сохранить ключи. Проверьте настройки Windows.";}
+            finally{editingKeys=false;}
         }
         void NextKey(string providerName){
             try{
@@ -397,6 +403,36 @@ namespace ZlhrsHelper {
                 if(visibleProvider){draft.KeySlot=slot;LoadKeyField();}
                 state.Text=providerName+" · активный слот "+(slot+1)+".";
             }catch(Exception){state.Text="Не удалось переключить ключ.";}
+        }
+        internal void StartInTray(){
+            IntPtr window=Handle;
+            mini.WantedVisible=true;
+            if(preview)return;
+            tray.Visible=true;
+            try{RegisterKeys(settings.GetHotkeys());}catch(InvalidOperationException ex){Notify(ex.Message);}
+        }
+        void UpdateTrayText(){tray.Text="ZLHRS Helper · "+settings.Provider;}
+        void Notify(string message){
+            state.Text=message;
+            if(!preview&&!Visible)tray.ShowBalloonTip(2500,"ZLHRS Helper",message,ToolTipIcon.Info);
+        }
+        internal void SwitchProvider(){
+            if(closing||editingKeys)return;
+            try{
+                var next=Json.New().Deserialize<Settings>(Json.New().Serialize(settings));
+                next.Provider=next.Provider=="OpenAI"?"Gemini":"OpenAI";
+                if(!preview)next.Save();
+                settings=next;UpdateTrayText();
+                if(draft.Provider!=next.Provider)provider.SelectedItem=next.Provider;
+                bool hasKey=Array.Exists(next.GetKeys(),k=>!String.IsNullOrEmpty(k));
+                Notify("Провайдер: "+next.Provider+(hasKey?".":". Добавьте ключ в настройках."));
+            }catch(Exception){Notify("Не удалось переключить провайдера.");}
+        }
+        internal void Restart(){
+            if(closing||editingKeys||preview)return;
+            try{Program.StartReplacement();}
+            catch(Exception){Notify("Не удалось запустить новый экземпляр. Текущий продолжает работать.");return;}
+            closing=true;Close();
         }
         void StartUpdate(){
             if(preview)return;
@@ -422,7 +458,7 @@ namespace ZlhrsHelper {
         }
         void UpdateOpacityLabel(){opacityLabel.Text="Непрозрачность: "+opacity.Value+"%"+(opacity.Value==0?" (скрыто)":"");}
         string Bind(int index){return settings.GetHotkeys()[index].ToString();}
-        void UnregisterKeys(){for(int i=1;i<=HotkeyChord.NextKeyId;i++)Native.UnregisterHotKey(Handle,i);}
+        void UnregisterKeys(){for(int i=1;i<=HotkeyChord.Count;i++)Native.UnregisterHotKey(Handle,i);}
         void RegisterKeys(HotkeyChord[] chords){
             HotkeyChord.Validate(chords);UnregisterKeys();
             for(int i=0;i<hotkeys.Length;i++)if(chords[i]!=null&&!Native.RegisterHotKey(Handle,i+1,chords[i].Modifiers|0x4000,chords[i].Key)){
@@ -438,7 +474,7 @@ namespace ZlhrsHelper {
                 next.Hotkeys=Array.ConvertAll(hotkeys,box=>box.Chord);
                 HotkeyChord.Validate(next.Hotkeys);next.SetModel(model.Text);next.Opacity=opacity.Value;next.SystemPrompt=systemPrompt.Text;
                 if(!preview)RegisterKeys(next.Hotkeys);
-                next.Save();settings=next;mini.SetOpacity(settings.Opacity);state.Text="Настройки сохранены.";return true;
+                next.Save();settings=next;UpdateTrayText();mini.SetOpacity(settings.Opacity);state.Text="Настройки сохранены.";return true;
             }catch(Exception ex){
                 settings=old;string message=ex.Message;
                 if(!preview){try{RegisterKeys(old.GetHotkeys());}catch{message+=" Старые клавиши тоже недоступны; откройте настройки через трей.";}}
@@ -447,7 +483,7 @@ namespace ZlhrsHelper {
         }
         protected override void WndProc(ref Message m){
             if(m.Msg==0x007E)QueueFit();
-            if(m.Msg==Native.WM_HOTKEY){int id=m.WParam.ToInt32();if(id==1)StartCapture();else if(id==2)Toggle();else if(id==3)Cancel(true);else if(id==4)ShowSettings();else if(id==HotkeyChord.NextKeyId)NextKey(settings.Provider);return;}base.WndProc(ref m);
+            if(m.Msg==Native.WM_HOTKEY){int id=m.WParam.ToInt32();if(id==1)StartCapture();else if(id==2)Toggle();else if(id==3)Cancel(true);else if(id==4)ShowSettings();else if(id==HotkeyChord.NextKeyId)NextKey(settings.Provider);else if(id==HotkeyChord.SwitchProviderId)SwitchProvider();return;}base.WndProc(ref m);
         }
         async void StartCapture(){await CaptureAsync();}
         void Toggle(){if(capturing)mini.WantedVisible=!mini.WantedVisible;else mini.SetVisible(!mini.WantedVisible);}
@@ -523,7 +559,13 @@ namespace ZlhrsHelper {
             }
         }
         void Cleanup(){
-            Cancel(false);for(int i=1;i<=HotkeyChord.NextKeyId;i++)Native.UnregisterHotKey(Handle,i);tray.Visible=false;tray.Dispose();mini.Dispose();
+            if(cleaned)return;
+            cleaned=true;closing=true;Cancel(false);
+            if(IsHandleCreated)UnregisterKeys();
+            tray.Visible=false;
+            var menu=tray.ContextMenuStrip;tray.Dispose();
+            if(menu!=null)menu.Dispose();
+            mini.Dispose();
         }
         internal AnswerForm Mini { get { return mini; } }
     }

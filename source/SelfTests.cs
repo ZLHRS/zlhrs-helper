@@ -147,8 +147,8 @@ namespace ZlhrsHelper {
                     mini.SetOpacity(0);mini.SetVisible(false);mini.SetVisible(true);Assert(!mini.Visible,"Toggle bypassed zero opacity");
                 }
             });
-            Check("Gemini models and four independent binding editors",()=>{
-                using(var form=new MainForm(true)){var choices=form.Controls.OfType<ComboBox>().Single(c=>c.Name=="Model");Assert(choices.Items.Contains("gemini-4-argon")&&choices.Text==Settings.DefaultModel,"Model list or default changed");Assert(form.Controls.OfType<HotkeyBox>().Count()==5,"Missing binding editors");}
+            Check("Gemini models and six independent binding editors",()=>{
+                using(var form=new MainForm(true)){var choices=form.Controls.OfType<ComboBox>().Single(c=>c.Name=="Model");Assert(choices.Items.Contains("gemini-4-argon")&&choices.Text==Settings.DefaultModel,"Model list or default changed");Assert(form.Controls.OfType<HotkeyBox>().Count()==6,"Missing binding editors");}
                 var payload=Json.New().DeserializeObject(VisionApi.Request("gemini-4-argon",image)) as Dictionary<string,object>;Assert(payload.ContainsKey("contents"),"Gemini request missing");
             });
             Check("System prompt persists multiline Unicode and old settings stay empty",()=>{
@@ -404,10 +404,49 @@ namespace ZlhrsHelper {
             Check("Existing hotkeys gain an optional next-key binding without changing old chords",()=>{
                 var settings=new Settings{Hotkeys=new[]{new HotkeyChord(3,81),new HotkeyChord(3,65),new HotkeyChord(3,88),new HotkeyChord(3,83)}};
                 var migrated=settings.GetHotkeys();
-                Assert(migrated.Length==5&&migrated[4]==null&&migrated.Take(4).SequenceEqual(settings.Hotkeys),"Existing binds changed");
+                Assert(migrated.Length==6&&migrated[4]==null&&migrated[5]==null&&migrated.Take(4).SequenceEqual(settings.Hotkeys),"Existing binds changed");
                 HotkeyChord.Validate(migrated);
                 migrated[4]=new HotkeyChord(3,75);HotkeyChord.Validate(migrated);
                 migrated[4]=migrated[0];Throws(()=>HotkeyChord.Validate(migrated),"своя комбинация");
+            });
+            Check("Tray startup remains hidden and provider changes preserve draft keys",()=>{
+                using(var form=new MainForm(true)){
+                    form.StartInTray();Assert(form.IsHandleCreated&&!form.Visible&&!form.Mini.Visible,"Startup showed a window or omitted the hotkey handle");
+                    var picker=(ComboBox)form.Controls["Provider"];
+                    var key=form.Controls.OfType<TextBox>().Single(c=>c.UseSystemPasswordChar);
+                    var model=(ComboBox)form.Controls["Model"];
+                    key.Text="gemini-draft-test";model.Text="gemini-manual";
+                    var message=Message.Create(form.Handle,Native.WM_HOTKEY,new IntPtr(HotkeyChord.SwitchProviderId),IntPtr.Zero);
+                    var method=typeof(MainForm).GetMethod("WndProc",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic);
+                    method.Invoke(form,new object[]{message});
+                    Assert(!form.Visible&&picker.Text=="OpenAI"&&key.Text=="","Provider hotkey leaked an old key or opened settings");
+                    key.Text="openai-draft-test";
+                    method.Invoke(form,new object[]{message});
+                    Assert(!form.Visible&&picker.Text=="Gemini"&&key.Text=="gemini-draft-test"&&model.Text=="gemini-manual","Provider hotkey lost draft settings");
+                }
+            });
+            Check("Restart waits for the old instance to release its mutex",()=>{
+                string name="Local\\ZlhrsHelper-test-"+Guid.NewGuid().ToString("N");
+                using(var owner=new Mutex(false,name)){
+                    Assert(Program.AcquireInstance(owner,false),"Initial instance could not acquire lock");
+                    bool released=false;
+                    try{
+                        Assert(!Task.Run(()=>{using(var other=new Mutex(false,name))return Program.AcquireInstance(other,false);}).GetAwaiter().GetResult(),"Duplicate instance was admitted");
+                        using(var ready=new ManualResetEventSlim(false)){
+                            var successor=Task.Run(()=>{
+                                using(var other=new Mutex(false,name)){
+                                    ready.Set();
+                                    bool acquired=Program.AcquireInstance(other,true);
+                                    if(acquired)other.ReleaseMutex();
+                                    return acquired;
+                                }
+                            });
+                            Assert(ready.Wait(3000)&&!successor.IsCompleted,"Restart did not wait for old instance");
+                            owner.ReleaseMutex();released=true;
+                            Assert(successor.Wait(3000)&&successor.Result,"Restart did not acquire released lock");
+                        }
+                    }finally{if(!released)owner.ReleaseMutex();}
+                }
             });
             report.Add("RESULT: "+(report.Count-1-failed)+" passed, "+failed+" failed.");
             report.Add("Live API access, answer accuracy, and third-party recording/streaming compatibility are NOT verified.");

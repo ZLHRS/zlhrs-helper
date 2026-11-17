@@ -10,12 +10,12 @@ namespace ZlhrsHelper {
         public HotkeyChord(){}
         public HotkeyChord(uint modifiers,uint key){Modifiers=modifiers;Key=key;}
         public override string ToString(){return ((Modifiers&2)!=0?"Ctrl + ":"")+((Modifiers&1)!=0?"Alt + ":"")+((Modifiers&4)!=0?"Shift + ":"")+((Modifiers&8)!=0?"Win + ":"")+((Keys)Key).ToString();}
-        internal const int NextKeyId=5;
+        internal const int NextKeyId=5,SwitchProviderId=6,Count=SwitchProviderId;
         internal static void Validate(HotkeyChord[] chords){
-            if(chords==null||chords.Length!=NextKeyId)throw new InvalidOperationException("Проверьте настройки горячих клавиш.");
+            if(chords==null||chords.Length!=Count)throw new InvalidOperationException("Проверьте настройки горячих клавиш.");
             var seen=new HashSet<string>();
             for(int i=0;i<chords.Length;i++){
-                var c=chords[i];if(c==null&&i==NextKeyId-1)continue;
+                var c=chords[i];if(c==null&&i>=NextKeyId-1)continue;
                 if(c==null||c.Key<8||c.Key>254||(c.Modifiers&~15u)!=0)throw new InvalidOperationException("Недопустимая горячая клавиша.");
                 if(!seen.Add(c.Modifiers+":"+c.Key))throw new InvalidOperationException("У каждого действия должна быть своя комбинация.");
             }
