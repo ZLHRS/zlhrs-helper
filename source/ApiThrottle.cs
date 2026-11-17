@@ -60,7 +60,7 @@ namespace ZlhrsHelper {
             }
             return slot;
         }
-        internal static async Task<int> WithSlots(string[] keys,int first,bool rotate,Func<string,CancellationToken,Task> send,CancellationToken token,Func<TimeSpan,CancellationToken,Task> delay=null,Action<int> onAttempt=null){
+        internal static async Task<int> WithSlots(string[] keys,int first,bool rotate,Func<string,CancellationToken,Task> send,CancellationToken token,Func<TimeSpan,CancellationToken,Task> delay=null,Action<int> onAttempt=null,TimeSpan? maxWait=null){
             int[] order=Enumerable.Range(0,keys.Length).Select(i=>(first+i)%keys.Length).Where(i=>!String.IsNullOrEmpty(keys[i])).GroupBy(i=>keys[i],StringComparer.Ordinal).Select(g=>g.First()).ToArray();
             if(order.Length==0)throw new InvalidOperationException("Добавьте API-ключ в настройках.");
             for(int i=0;;i++){
@@ -71,7 +71,8 @@ namespace ZlhrsHelper {
                 catch(TemporaryRateLimit ex){
                     if(!rotate||i+1==order.Length)throw;
                     wait=ex.RetryAfter??TimeSpan.FromSeconds(1<<i);
-                    if(wait>TimeSpan.FromSeconds(60))throw;
+                    if(wait>(maxWait??TimeSpan.FromSeconds(60)))
+                        throw new TemporaryRateLimit(ex.Message+"\n\nСервер просит подождать "+Math.Ceiling(wait.TotalSeconds)+" с. Повторите запрос позже.",wait);
                 }
                 if(wait>TimeSpan.Zero)await (delay??Task.Delay)(wait,token).ConfigureAwait(false);
             }

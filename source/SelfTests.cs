@@ -448,6 +448,34 @@ namespace ZlhrsHelper {
                     }finally{if(!released)owner.ReleaseMutex();}
                 }
             });
+            Check("Deadline releases stalled transport and preserves normal results",()=>{
+                var pending=new TaskCompletionSource<int>();
+                using(var cancel=new CancellationTokenSource()){
+                    var wait=RequestDeadline.WaitAsync(pending.Task,cancel.Token);
+                    Assert(!wait.IsCompleted,"Pending request returned early");
+                    cancel.Cancel();
+                    Assert(Task.WhenAny(wait,Task.Delay(1500)).GetAwaiter().GetResult()==wait,"Caller is stuck behind transport");
+                    Assert(wait.IsCanceled&&!pending.Task.IsCompleted,"Deadline did not detach stalled transport");
+                    pending.SetException(new IOException("late simulated failure"));
+                }
+                Assert(RequestDeadline.WaitAsync(Task.FromResult(42),CancellationToken.None).GetAwaiter().GetResult()==42,"Completed request failed");
+            });
+            Check("Long rate-limit cooldown returns the provider error with no extra attempt",()=>{
+                int attempts=0;
+                Throws(()=>ApiThrottle.WithSlots(new[]{"one","two"},0,true,(key,token)=>{
+                    attempts++;throw new TemporaryRateLimit("HTTP 429",TimeSpan.FromSeconds(45));
+                },CancellationToken.None,maxWait:TimeSpan.FromSeconds(10)).GetAwaiter().GetResult(),"45 с");
+                Assert(attempts==1,"Retried despite long server cooldown");
+            });
+            Check("Gemini Flash latency setting leaves other models unchanged",()=>{
+                foreach(string model in new[]{"gemini-3.6-flash","gemini-3.5-flash-lite","gemini-4-argon"}){
+                    var body=(Dictionary<string,object>)Json.New().DeserializeObject(VisionApi.Request(model,image));
+                    var config=(Dictionary<string,object>)body["generationConfig"];
+                    if(model=="gemini-4-argon"){Assert(!config.ContainsKey("thinkingConfig"),"Custom model was modified");continue;}
+                    var thinking=(Dictionary<string,object>)config["thinkingConfig"];
+                    Assert((string)thinking["thinkingLevel"]==(model.EndsWith("-lite")?"MINIMAL":"LOW"),"Unexpected thinking setting");
+                }
+            });
             report.Add("RESULT: "+(report.Count-1-failed)+" passed, "+failed+" failed.");
             report.Add("Live API access, answer accuracy, and third-party recording/streaming compatibility are NOT verified.");
             File.WriteAllLines(Path.GetFullPath(path),report,Encoding.UTF8);return failed==0?0:1;

@@ -131,13 +131,18 @@ namespace ZlhrsHelper {
             return instructions;
         }
         internal static string Request(string model,CaptureData image,string systemPrompt=null){
-            NormalizeModel(model);
+            model=NormalizeModel(model);
+            var config=Json.Obj("maxOutputTokens",16384,"responseMimeType","application/json","responseJsonSchema",Schema());
+            if(new[]{"gemini-3.6-flash","gemini-3.5-flash","gemini-3.7-flash","gemini-3.8-flash","gemini-3-flash-preview"}.Contains(model))
+                config["thinkingConfig"]=Json.Obj("thinkingLevel","LOW");
+            else if(new[]{"gemini-3.5-flash-lite","gemini-3.1-flash-lite","gemini-3.1-flash-lite-preview"}.Contains(model))
+                config["thinkingConfig"]=Json.Obj("thinkingLevel","MINIMAL");
             return Json.New().Serialize(Json.Obj(
                 "systemInstruction",Json.Obj("parts",new[]{Json.Obj("text",Instructions(systemPrompt))}),
                 "contents",new[]{Json.Obj("role","user","parts",new object[]{
                     Json.Obj("text","Снимок экрана "+image.Size.Width+"×"+image.Size.Height+". Найди видимые вопросы и варианты ответа. Ответь по-русски; текст вариантов сохрани на языке оригинала."),
                     Json.Obj("inlineData",Json.Obj("mimeType","image/png","data",Convert.ToBase64String(image.Png)))})},
-                "generationConfig",Json.Obj("maxOutputTokens",16384,"responseMimeType","application/json","responseJsonSchema",Schema())));
+                "generationConfig",config));
         }
         internal static async Task<AnalysisResult> SolveAsync(string key,string payload,CancellationToken token,string model=null){
             ServicePointManager.SecurityProtocol|=SecurityProtocolType.Tls12;

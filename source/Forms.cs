@@ -497,7 +497,7 @@ namespace ZlhrsHelper {
             mini.SetAnswer("1. Сколько будет 2 + 2?\n✓ Б) 4\n\n2. Выберите простые числа.\n✓ А) 2\n✓ В) 5","ДЕМО · без API");
         }
         async Task CaptureAsync(){
-            if(capturing)return;
+            if(capturing||request!=null)return;
             var snapshot=settings;
             string[] apiKeys;
             try{apiKeys=snapshot.GetKeys();}catch{ShowSettings();state.Text="Проверьте ключи в настройках.";return;}
@@ -505,6 +505,8 @@ namespace ZlhrsHelper {
             string apiProvider=snapshot.Provider,apiModel=snapshot.ActiveModel,prompt=snapshot.SystemPrompt;
             capturing=true;Cancel(false);int version=generation;
             var cts=new CancellationTokenSource();request=cts;
+            string target=apiProvider+" · "+apiModel;
+            int currentSlot=-1;
             try{
                 Screen screen=Screen.FromPoint(Cursor.Position);Rectangle bounds=screen.Bounds;
                 Hide();mini.Hide();
@@ -513,26 +515,47 @@ namespace ZlhrsHelper {
                 CaptureData image;
                 using(var bitmap=new Bitmap(bounds.Width,bounds.Height,PixelFormat.Format24bppRgb)){
                     using(var g=Graphics.FromImage(bitmap))g.CopyFromScreen(bounds.Location,Point.Empty,bounds.Size,CopyPixelOperation.SourceCopy);
-                    image=CaptureData.Encode(bitmap);
+                    mini.SetAnswer("Подготавливаю снимок…","ZlhrsHelper");
+                    image=await Task.Run(()=>CaptureData.Encode(bitmap),cts.Token);
+                    cts.Token.ThrowIfCancellationRequested();
                 }
                 DateTime capturedAt=DateTime.Now;
-                mini.SetAnswer("Читаю вопрос и варианты на снимке…","Обработка · "+capturedAt.ToString("HH:mm:ss"));
                 capturing=false;
                 bool openAi=apiProvider=="OpenAI";
-                string payload=openAi?OpenAiApi.Request(apiModel,image,prompt):VisionApi.Request(apiModel,image,prompt);
                 AnalysisResult result=null;int usedSlot;
-                int first=ApiThrottle.FirstSlot(apiKeys,snapshot.KeySlot),lastAttempt=first;
+                int first=ApiThrottle.FirstSlot(apiKeys,snapshot.KeySlot);currentSlot=first;
                 bool each=snapshot.RotateEachRequest;
                 if(each)SetActiveSlot(snapshot,apiKeys,ApiThrottle.NextSlot(apiKeys,first));
+                var watch=Stopwatch.StartNew();
+                int waiting=0;
+                Action showProgress=()=>{
+                    if(version!=generation||IsDisposed)return;
+                    string phase=Volatile.Read(ref waiting)==0?"Жду ответ":"Пауза перед повтором";
+                    mini.SetAnswer(phase+" · "+Math.Min(RequestDeadline.Seconds,(int)watch.Elapsed.TotalSeconds)+"/"+RequestDeadline.Seconds+" с\n"+target+" · ключ "+(Volatile.Read(ref currentSlot)+1),"ZlhrsHelper");
+                };
                 try{
-                    using(var timeout=CancellationTokenSource.CreateLinkedTokenSource(cts.Token)){
-                        timeout.CancelAfter(TimeSpan.FromSeconds(90));
-                        usedSlot=await ApiThrottle.WithSlots(apiKeys,first,snapshot.AutoRotate,async (apiKey,token)=>{
-                            result=openAi?await OpenAiApi.SolveAsync(apiKey,payload,token).ConfigureAwait(false)
-                                :await VisionApi.SolveAsync(apiKey,payload,token,apiModel).ConfigureAwait(false);
-                        },timeout.Token,onAttempt:i=>lastAttempt=i);
+                    using(var timeout=CancellationTokenSource.CreateLinkedTokenSource(cts.Token))
+                    using(var progress=new System.Windows.Forms.Timer{Interval=1000}){
+                        timeout.CancelAfter(TimeSpan.FromSeconds(RequestDeadline.Seconds));
+                        var token=timeout.Token;
+                        progress.Tick+=(s,e)=>showProgress();
+                        showProgress();progress.Start();
+                        var work=Task.Run(async ()=>{
+                            token.ThrowIfCancellationRequested();
+                            string payload=openAi?OpenAiApi.Request(apiModel,image,prompt):VisionApi.Request(apiModel,image,prompt);
+                            return await ApiThrottle.WithSlots(apiKeys,first,snapshot.AutoRotate,async (apiKey,sendToken)=>{
+                                result=openAi?await OpenAiApi.SolveAsync(apiKey,payload,sendToken).ConfigureAwait(false)
+                                    :await VisionApi.SolveAsync(apiKey,payload,sendToken,apiModel).ConfigureAwait(false);
+                            },token,delay:(wait,waitToken)=>{
+                                Volatile.Write(ref waiting,1);return Task.Delay(wait,waitToken);
+                            },onAttempt:i=>{
+                                Volatile.Write(ref currentSlot,i);Volatile.Write(ref waiting,0);
+                            },maxWait:TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+                        },token);
+                        usedSlot=await RequestDeadline.WaitAsync(work,token);
                     }
                 }finally{
+                    int lastAttempt=Volatile.Read(ref currentSlot);
                     if(each&&lastAttempt!=first&&version==generation&&!IsDisposed)
                         SetActiveSlot(snapshot,apiKeys,ApiThrottle.NextSlot(apiKeys,lastAttempt));
                 }
@@ -541,9 +564,12 @@ namespace ZlhrsHelper {
                 mini.SetAnswer(VisionApi.Display(result),"Снимок "+capturedAt.ToString("HH:mm:ss")+" · ответ ИИ");
                 state.Text="Ответ готов · слот "+(usedSlot+1)+". "+Bind(1)+" открывает мини-окно.";
             }catch(OperationCanceledException){
-                if(version==generation&&!IsDisposed)mini.SetAnswer("Время ожидания истекло или запрос отменён. Повторите снимок.","ZlhrsHelper · ожидание завершено");
+                if(version==generation&&!IsDisposed&&!cts.IsCancellationRequested){
+                    string message="Нет ответа за "+RequestDeadline.Seconds+" с: "+target+" · ключ "+(Volatile.Read(ref currentSlot)+1)+".\nПовтори снимок или попробуй другую модель.";
+                    mini.SetAnswer(message,"ZlhrsHelper · таймаут");state.Text=message;
+                }
             }catch(Exception ex){
-                if(version==generation&&!IsDisposed){string message=ex is System.Net.Http.HttpRequestException?"Не удалось подключиться к API. Проверьте интернет.":ex.Message;mini.SetAnswer(message,"ZlhrsHelper · ошибка");state.Text=message;}
+                if(version==generation&&!IsDisposed){string message=ex is System.Net.Http.HttpRequestException?"Не удалось подключиться: "+target+". Проверь интернет и доступ к API.":ex.Message;mini.SetAnswer(message,"ZlhrsHelper · ошибка");state.Text=message;}
             }finally{
                 if(request==cts){request=null;capturing=false;}cts.Dispose();
                 if(version==generation&&!IsDisposed)mini.RestoreVisibility();
