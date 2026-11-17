@@ -123,7 +123,7 @@ namespace ZlhrsHelper {
             Caption(0,"Модель",330,251,294,22);
             provider=OnPage(0,new ComboBox{Name="Provider",Location=new Point(34,275),Width=282,DropDownStyle=ComboBoxStyle.DropDownList});
             provider.Items.AddRange(new[]{ "OpenAI","Gemini" });provider.SelectedItem=settings.Provider=="OpenAI"?"OpenAI":"Gemini";
-            model=OnPage(0,new ComboBox{Name="Model",Location=new Point(330,275),Width=294,DropDownStyle=ComboBoxStyle.DropDown});
+            model=OnPage(0,new ComboBox{Name="Model",Location=new Point(330,275),Width=294,DropDownStyle=ComboBoxStyle.DropDownList});
             keyLabel=Caption(0,"",34,318,280,23,10,SettingsTheme.Text);
             AddButton(0,"Слоты ключей",326,313,132,30,false,EditKeys);
             AddButton(0,"Следующий ключ",468,313,156,30,false,()=>NextKey(draft.Provider));
@@ -148,17 +148,17 @@ namespace ZlhrsHelper {
             answerTheme.SelectedIndexChanged+=(s,e)=>{draft.AnswerTheme=((Palette)answerTheme.SelectedItem).Id;mini.SetTheme(draft.AnswerTheme);};
 
             PageHeading(2,"Горячие клавиши","Нажмите на поле, введите комбинацию и сохраните настройки.");
-            string[] names={"Снимок → ответ","Показать / скрыть ответ","Отмена и очистка","Открыть настройки","Следующий ключ API","Сменить провайдера"};
+            string[] names={"Снимок → ответ","Показать / скрыть ответ","Отмена и очистка","Открыть настройки","Следующий ключ API","Сменить провайдера","Следующая модель","Перезапуск приложения"};
             var chords=settings.GetHotkeys();
             for(int i=0;i<hotkeys.Length;i++){
-                int x=i%2==0?34:330,y=253+(i/2)*67,w=i%2==0?282:294;
+                int x=i%2==0?34:330,y=251+(i/2)*54,w=i%2==0?282:294;
                 Caption(2,names[i],x,y,w,23,10,SettingsTheme.Text);
                 var box=OnPage(2,new HotkeyBox(chords[i],i>=HotkeyChord.NextKeyId-1){Location=new Point(x,y+27),Width=w,BorderStyle=BorderStyle.FixedSingle,AccessibleName=names[i]});
                 hotkeys[i]=box;
                 box.Enter+=(s,e)=>{if(!preview)UnregisterKeys();};
                 box.Leave+=(s,e)=>{if(!preview){try{RegisterKeys(settings.GetHotkeys());}catch(Exception ex){state.Text=ex.Message;}}};
             }
-            Caption(2,"Backspace снимает привязку у двух нижних полей.",34,468,590,27,9);
+            Caption(2,"Backspace снимает привязку у необязательных команд.",34,468,590,27,9);
             AddButton(-1,"Сохранить",30,531,220,42,true,()=>{if(ApplySettings()){Hide();mini.SetVisible(true);}});
             AddButton(-1,"Показать ответ",262,531,215,42,false,()=>mini.SetVisible(true));
             AddButton(-1,"Демо",489,531,135,42,false,Demo);
@@ -171,6 +171,7 @@ namespace ZlhrsHelper {
             var menu=new ContextMenuStrip{BackColor=Color.White,ForeColor=Color.Black,RenderMode=ToolStripRenderMode.System};menu.Opened+=(s,e)=>Native.Exclude(menu.Handle);
             menu.Items.Add("Настройки",null,(s,e)=>ShowSettings());
             menu.Items.Add("Сменить провайдера",null,(s,e)=>SwitchProvider());
+            menu.Items.Add("Следующая модель",null,(s,e)=>NextModel());
             menu.Items.Add("Показать / скрыть ответ",null,(s,e)=>Toggle());
             menu.Items.Add("Демо без API",null,(s,e)=>Demo());menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Перезапустить",null,(s,e)=>Restart());
@@ -358,14 +359,13 @@ namespace ZlhrsHelper {
         }
         void StoreProvider(){
             draft.SetKey(key.Text);
-            if(draft.Provider=="OpenAI")draft.OpenAiModel=model.Text.Trim();else draft.Model=model.Text.Trim();
+            draft.SetModel((string)model.SelectedItem);
         }
         void LoadProvider(){
             LoadKeyField();
             model.Items.Clear();
-            if(draft.Provider=="OpenAI")model.Items.AddRange(new[]{"gpt-4.1-mini","gpt-4.1","gpt-5-mini","gpt-5.2","gpt-6-luna","gpt-6-sol","gpt-6-astra","gpt-6.1-sol"});
-            else model.Items.AddRange(new[]{Settings.DefaultModel,"gemini-3.6-flash","gemini-3.8-flash","gemini-4-argon"});
-            model.Text=draft.ActiveModel;
+            model.Items.AddRange(ModelCatalog.Choices(draft.Provider));
+            model.SelectedItem=draft.ActiveModel;
         }
         void LoadKeyField(){
             keyLabel.Text=draft.Provider+" · ключ "+(draft.KeySlot+1)+"/"+Settings.SlotCount+(draft.RotateEachRequest?" · круг":draft.AutoRotate?" · авто":"");
@@ -411,7 +411,7 @@ namespace ZlhrsHelper {
             tray.Visible=true;
             try{RegisterKeys(settings.GetHotkeys());}catch(InvalidOperationException ex){Notify(ex.Message);}
         }
-        void UpdateTrayText(){tray.Text="ZLHRS Helper · "+settings.Provider;}
+        void UpdateTrayText(){tray.Text="ZLHRS Helper · "+settings.Provider+" · "+settings.ActiveModel;}
         void Notify(string message){
             state.Text=message;
             if(!preview&&!Visible)tray.ShowBalloonTip(2500,"ZLHRS Helper",message,ToolTipIcon.Info);
@@ -427,6 +427,21 @@ namespace ZlhrsHelper {
                 bool hasKey=Array.Exists(next.GetKeys(),k=>!String.IsNullOrEmpty(k));
                 Notify("Провайдер: "+next.Provider+(hasKey?".":". Добавьте ключ в настройках."));
             }catch(Exception){Notify("Не удалось переключить провайдера.");}
+        }
+        void NextModel(){
+            if(closing||editingKeys)return;
+            try{
+                var next=Json.New().Deserialize<Settings>(Json.New().Serialize(settings));
+                string chosen=ModelCatalog.Next(next.Provider,next.ActiveModel);
+                next.SetModel(chosen);
+                if(!preview)next.Save();
+                settings=next;UpdateTrayText();
+                if(draft.Provider==next.Provider){
+                    draft.SetModel(chosen);model.SelectedItem=chosen;
+                }else if(next.Provider=="OpenAI")draft.OpenAiModel=chosen;
+                else draft.Model=chosen;
+                Notify(next.Provider+" · "+chosen);
+            }catch(Exception){Notify("Не удалось переключить модель.");}
         }
         internal void Restart(){
             if(closing||editingKeys||preview)return;
@@ -466,13 +481,13 @@ namespace ZlhrsHelper {
             }
         }
         bool ApplySettings(){
-            if(String.IsNullOrWhiteSpace(model.Text)){state.Text="Введите имя модели API.";return false;}
+            if(model.SelectedIndex<0){state.Text="Выберите модель из списка.";return false;}
             var old=settings;
             try{
                 StoreProvider();
                 var next=Json.New().Deserialize<Settings>(Json.New().Serialize(draft));
                 next.Hotkeys=Array.ConvertAll(hotkeys,box=>box.Chord);
-                HotkeyChord.Validate(next.Hotkeys);next.SetModel(model.Text);next.Opacity=opacity.Value;next.SystemPrompt=systemPrompt.Text;
+                HotkeyChord.Validate(next.Hotkeys);next.SetModel((string)model.SelectedItem);next.Opacity=opacity.Value;next.SystemPrompt=systemPrompt.Text;
                 if(!preview)RegisterKeys(next.Hotkeys);
                 next.Save();settings=next;UpdateTrayText();mini.SetOpacity(settings.Opacity);state.Text="Настройки сохранены.";return true;
             }catch(Exception ex){
@@ -483,7 +498,7 @@ namespace ZlhrsHelper {
         }
         protected override void WndProc(ref Message m){
             if(m.Msg==0x007E)QueueFit();
-            if(m.Msg==Native.WM_HOTKEY){int id=m.WParam.ToInt32();if(id==1)StartCapture();else if(id==2)Toggle();else if(id==3)Cancel(true);else if(id==4)ShowSettings();else if(id==HotkeyChord.NextKeyId)NextKey(settings.Provider);else if(id==HotkeyChord.SwitchProviderId)SwitchProvider();return;}base.WndProc(ref m);
+            if(m.Msg==Native.WM_HOTKEY){int id=m.WParam.ToInt32();if(id==1)StartCapture();else if(id==2)Toggle();else if(id==3)Cancel(true);else if(id==4)ShowSettings();else if(id==HotkeyChord.NextKeyId)NextKey(settings.Provider);else if(id==HotkeyChord.SwitchProviderId)SwitchProvider();else if(id==HotkeyChord.NextModelId)NextModel();else if(id==HotkeyChord.RestartId)Restart();return;}base.WndProc(ref m);
         }
         async void StartCapture(){await CaptureAsync();}
         void Toggle(){if(capturing)mini.WantedVisible=!mini.WantedVisible;else mini.SetVisible(!mini.WantedVisible);}

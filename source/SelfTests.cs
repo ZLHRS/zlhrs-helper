@@ -147,8 +147,8 @@ namespace ZlhrsHelper {
                     mini.SetOpacity(0);mini.SetVisible(false);mini.SetVisible(true);Assert(!mini.Visible,"Toggle bypassed zero opacity");
                 }
             });
-            Check("Gemini models and six independent binding editors",()=>{
-                using(var form=new MainForm(true)){var choices=form.Controls.OfType<ComboBox>().Single(c=>c.Name=="Model");Assert(choices.Items.Contains("gemini-4-argon")&&choices.Text==Settings.DefaultModel,"Model list or default changed");Assert(form.Controls.OfType<HotkeyBox>().Count()==6,"Missing binding editors");}
+            Check("Curated Gemini models and eight independent binding editors",()=>{
+                using(var form=new MainForm(true)){var choices=form.Controls.OfType<ComboBox>().Single(c=>c.Name=="Model");Assert(choices.DropDownStyle==ComboBoxStyle.DropDownList&&choices.Items.Cast<string>().SequenceEqual(ModelCatalog.Choices("Gemini"))&&choices.Text==Settings.DefaultModel,"Model list or default changed");Assert(form.Controls.OfType<HotkeyBox>().Count()==8,"Missing binding editors");}
                 var payload=Json.New().DeserializeObject(VisionApi.Request("gemini-4-argon",image)) as Dictionary<string,object>;Assert(payload.ContainsKey("contents"),"Gemini request missing");
             });
             Check("System prompt persists multiline Unicode and old settings stay empty",()=>{
@@ -166,17 +166,17 @@ namespace ZlhrsHelper {
                     var provider=form.Controls.OfType<ComboBox>().Single(c=>c.Name=="Provider");
                     var model=form.Controls.OfType<ComboBox>().Single(c=>c.Name=="Model");
                     var key=form.Controls.OfType<TextBox>().Single(c=>c.UseSystemPasswordChar);
-                    key.Text="gemini-test-key";model.Text="gemini-custom-model";provider.SelectedItem="OpenAI";
-                    Assert(key.Text==""&&model.Text=="gpt-4.1-mini"&&model.Items.Contains("gpt-4.1")&&!model.Items.Contains(Settings.DefaultModel),"OpenAI options or key isolation failed");
-                    key.Text="openai-test-key";model.Text="gpt-custom-model";provider.SelectedItem="Gemini";
-                    Assert(key.Text=="gemini-test-key"&&model.Text=="gemini-custom-model"&&!model.Items.Contains("gpt-4.1"),"Gemini draft lost");
-                    provider.SelectedItem="OpenAI";Assert(key.Text=="openai-test-key"&&model.Text=="gpt-custom-model","OpenAI draft lost");
+                    key.Text="gemini-test-key";model.SelectedItem="gemini-3.6-flash";provider.SelectedItem="OpenAI";
+                    Assert(key.Text==""&&model.Text==ModelCatalog.OpenAiDefault&&model.Items.Cast<string>().SequenceEqual(ModelCatalog.Choices("OpenAI"))&&!model.Items.Contains(Settings.DefaultModel),"OpenAI options or key isolation failed");
+                    key.Text="openai-test-key";model.SelectedItem="gpt-6.1-terra";provider.SelectedItem="Gemini";
+                    Assert(key.Text=="gemini-test-key"&&model.Text=="gemini-3.6-flash"&&!model.Items.Contains("gpt-4.1"),"Gemini draft lost");
+                    provider.SelectedItem="OpenAI";Assert(key.Text=="openai-test-key"&&model.Text=="gpt-6.1-terra","OpenAI draft lost");
                 }
             });
             Check("Both provider keys and models survive encrypted serialization",()=>{
-                var cfg=new Settings();cfg.SetKey("gemini-test-key");cfg.Provider="OpenAI";cfg.SetKey("openai-test-key");cfg.SetModel("gpt-4.1");
+                var cfg=new Settings();cfg.SetKey("gemini-test-key");cfg.Provider="OpenAI";cfg.SetKey("openai-test-key");cfg.SetModel("gpt-6.1-terra");
                 string json=Json.New().Serialize(cfg);Assert(!json.Contains("test-key"),"Plaintext key saved");
-                var restored=Json.New().Deserialize<Settings>(json);Assert(restored.Key=="openai-test-key"&&restored.ActiveModel=="gpt-4.1","OpenAI values lost");
+                var restored=Json.New().Deserialize<Settings>(json);Assert(restored.Key=="openai-test-key"&&restored.ActiveModel=="gpt-6.1-terra","OpenAI values lost");
                 restored.SetKey("");restored.Provider="Gemini";Assert(restored.Key=="gemini-test-key"&&restored.ActiveModel==Settings.DefaultModel,"Gemini values lost when OpenAI cleared");
                 Assert(Json.New().Deserialize<Settings>("{}").Provider=="Gemini","Existing Gemini settings changed provider");
             });
@@ -205,10 +205,10 @@ namespace ZlhrsHelper {
                 Directory.CreateDirectory(dir);
                 string current=Path.Combine(dir,"new-settings.json"),previous=Path.Combine(dir,"gemini-settings.json");
                 try{
-                    var cfg=new Settings{Provider="OpenAI",OpenAiModel="gpt-4.1",SystemPrompt="Контекст",Opacity=42};
+                    var cfg=new Settings{Provider="OpenAI",OpenAiModel="gpt-6.1-terra",SystemPrompt="Контекст",Opacity=42};
                     cfg.SetKey("migration-test-key");File.WriteAllText(previous,Json.New().Serialize(cfg));
                     var migrated=Settings.LoadFrom(current,dir);
-                    Assert(migrated.Provider=="OpenAI"&&migrated.Key=="migration-test-key"&&migrated.ActiveModel=="gpt-4.1"&&migrated.Opacity==42&&migrated.SystemPrompt=="Контекст","Previous settings lost");
+                    Assert(migrated.Provider=="OpenAI"&&migrated.Key=="migration-test-key"&&migrated.ActiveModel=="gpt-6.1-terra"&&migrated.Opacity==42&&migrated.SystemPrompt=="Контекст","Previous settings lost");
                     File.WriteAllText(current,Json.New().Serialize(new Settings{Opacity=77}));
                     Assert(Settings.LoadFrom(current,dir).Opacity==77,"Old settings override current settings");
                     Assert(File.Exists(previous),"Migration removed previous settings");
@@ -220,7 +220,7 @@ namespace ZlhrsHelper {
                     var answer=form.Controls.OfType<ComboBox>().Single(c=>c.Name=="AnswerTheme");
                     var model=form.Controls.OfType<ComboBox>().Single(c=>c.Name=="Model");
                     var key=form.Controls.OfType<TextBox>().Single(c=>c.UseSystemPasswordChar);
-                    key.Text="theme-test-key";model.Text="gemini-custom";form.Mini.SetAnswer("Тестовый ответ","test");form.Mini.SetOpacity(75);
+                    key.Text="theme-test-key";model.SelectedItem="gemini-3.6-flash";form.Mini.SetAnswer("Тестовый ответ","test");form.Mini.SetOpacity(75);
                     main.SelectedItem=Palette.Find("light","green");
                     answer.SelectedItem=Palette.Find("black","light");
                     Assert(form.BackColor.ToArgb()==Color.White.ToArgb()&&form.Mini.BackColor.ToArgb()==Color.Black.ToArgb(),"Window themes coupled");
@@ -228,7 +228,7 @@ namespace ZlhrsHelper {
                     Assert(form.Mini.BackColor.ToArgb()==Color.Black.ToArgb()&&form.BackColor==Palette.Find("purple","green").Background,"Main theme changed answer");
                     answer.SelectedItem=Palette.Find("blue","light");
                     Assert(form.BackColor==Palette.Find("purple","green").Background&&form.Mini.BodyText=="Тестовый ответ"&&Math.Abs(form.Mini.Opacity-.75)<.01,"Answer theme changed content or opacity");
-                    Assert(key.Text=="theme-test-key"&&model.Text=="gemini-custom","Theme reset provider draft");
+                    Assert(key.Text=="theme-test-key"&&model.Text=="gemini-3.6-flash","Theme reset provider draft");
                     Assert(form.Mini.Controls.OfType<Button>().Count()==1&&form.Mini.Controls.Count==2,"Theme added extra answer controls");
                 }
             });
@@ -318,7 +318,7 @@ namespace ZlhrsHelper {
                     var key=form.Controls.OfType<TextBox>().Single(c=>c.UseSystemPasswordChar);
                     var save=form.Controls.OfType<Button>().Single(c=>c.Text=="Сохранить");
                     var model=(ComboBox)form.Controls["Model"];
-                    key.Text="resize-test-placeholder";model.Text="gemini-resize-test";
+                    key.Text="resize-test-placeholder";model.SelectedItem="gemini-3.6-flash";
                     foreach(var logical in new[]{new Size(990,810),new Size(990,630),new Size(620,550),new Size(430,350),new Size(990,810)}){
                         form.AutoScrollPosition=Point.Empty;
                         form.ClientSize=new Size(SettingsLayout.Scale(logical.Width,form.DeviceDpi),SettingsLayout.Scale(logical.Height,form.DeviceDpi));
@@ -333,7 +333,7 @@ namespace ZlhrsHelper {
                         if(logical.Height>=630)Assert(form.ClientRectangle.Contains(save.Bounds),"Save is hidden at laptop height");
                         form.ScrollControlIntoView(save);Application.DoEvents();
                         Assert(form.ClientRectangle.Contains(save.Bounds),"Save cannot be reached on "+logical);
-                        Assert(key.Text=="resize-test-placeholder"&&model.Text=="gemini-resize-test","Resize or navigation lost typed settings");
+                        Assert(key.Text=="resize-test-placeholder"&&model.Text=="gemini-3.6-flash","Resize or navigation lost typed settings");
                         }
                     }
                     form.Close();
@@ -404,7 +404,7 @@ namespace ZlhrsHelper {
             Check("Existing hotkeys gain an optional next-key binding without changing old chords",()=>{
                 var settings=new Settings{Hotkeys=new[]{new HotkeyChord(3,81),new HotkeyChord(3,65),new HotkeyChord(3,88),new HotkeyChord(3,83)}};
                 var migrated=settings.GetHotkeys();
-                Assert(migrated.Length==6&&migrated[4]==null&&migrated[5]==null&&migrated.Take(4).SequenceEqual(settings.Hotkeys),"Existing binds changed");
+                Assert(migrated.Length==8&&migrated.Skip(4).All(chord=>chord==null)&&migrated.Take(4).SequenceEqual(settings.Hotkeys),"Existing binds changed");
                 HotkeyChord.Validate(migrated);
                 migrated[4]=new HotkeyChord(3,75);HotkeyChord.Validate(migrated);
                 migrated[4]=migrated[0];Throws(()=>HotkeyChord.Validate(migrated),"своя комбинация");
@@ -415,14 +415,14 @@ namespace ZlhrsHelper {
                     var picker=(ComboBox)form.Controls["Provider"];
                     var key=form.Controls.OfType<TextBox>().Single(c=>c.UseSystemPasswordChar);
                     var model=(ComboBox)form.Controls["Model"];
-                    key.Text="gemini-draft-test";model.Text="gemini-manual";
+                    key.Text="gemini-draft-test";model.SelectedItem="gemini-3.6-flash";
                     var message=Message.Create(form.Handle,Native.WM_HOTKEY,new IntPtr(HotkeyChord.SwitchProviderId),IntPtr.Zero);
                     var method=typeof(MainForm).GetMethod("WndProc",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic);
                     method.Invoke(form,new object[]{message});
                     Assert(!form.Visible&&picker.Text=="OpenAI"&&key.Text=="","Provider hotkey leaked an old key or opened settings");
                     key.Text="openai-draft-test";
                     method.Invoke(form,new object[]{message});
-                    Assert(!form.Visible&&picker.Text=="Gemini"&&key.Text=="gemini-draft-test"&&model.Text=="gemini-manual","Provider hotkey lost draft settings");
+                    Assert(!form.Visible&&picker.Text=="Gemini"&&key.Text=="gemini-draft-test"&&model.Text=="gemini-3.6-flash","Provider hotkey lost draft settings");
                 }
             });
             Check("Restart waits for the old instance to release its mutex",()=>{
@@ -475,6 +475,39 @@ namespace ZlhrsHelper {
                     var thinking=(Dictionary<string,object>)config["thinkingConfig"];
                     Assert((string)thinking["thinkingLevel"]==(model.EndsWith("-lite")?"MINIMAL":"LOW"),"Unexpected thinking setting");
                 }
+            });
+            Check("Next-model hotkey cycles only the active provider without losing key drafts",()=>{
+                using(var form=new MainForm(true)){
+                    form.StartInTray();
+                    var picker=(ComboBox)form.Controls["Provider"];
+                    var model=(ComboBox)form.Controls["Model"];
+                    var key=form.Controls.OfType<TextBox>().Single(c=>c.UseSystemPasswordChar);
+                    key.Text="keep-gemini-draft";
+                    var method=typeof(MainForm).GetMethod("WndProc",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic);
+                    Action<int> press=id=>method.Invoke(form,new object[]{Message.Create(form.Handle,Native.WM_HOTKEY,new IntPtr(id),IntPtr.Zero)});
+                    var gemini=ModelCatalog.Choices("Gemini");
+                    for(int i=1;i<=gemini.Length;i++){
+                        press(HotkeyChord.NextModelId);
+                        Assert(picker.Text=="Gemini"&&model.Text==gemini[i%gemini.Length]&&key.Text=="keep-gemini-draft","Gemini cycle changed unrelated settings");
+                    }
+                    picker.SelectedItem="OpenAI";key.Text="keep-openai-draft";
+                    press(HotkeyChord.NextModelId);
+                    Assert(picker.Text=="OpenAI"&&model.Text==ModelCatalog.OpenAiDefault&&key.Text=="keep-openai-draft","Model hotkey followed unsaved provider");
+                    picker.SelectedItem="Gemini";
+                    Assert(model.Text==gemini[1],"Saved provider did not advance");
+                    press(HotkeyChord.SwitchProviderId);press(HotkeyChord.NextModelId);
+                    Assert(picker.Text=="OpenAI"&&model.Text==ModelCatalog.Choices("OpenAI")[1]&&key.Text=="keep-openai-draft","OpenAI cycle lost key");
+                }
+            });
+            Check("Legacy model values resolve to supported choices and new binds are optional",()=>{
+                var cfg=new Settings{Model="gemini-4-argon",OpenAiModel="gpt-5-mini",Hotkeys=new Settings().GetHotkeys().Take(6).ToArray()};
+                cfg.Hotkeys[5]=new HotkeyChord(3,80);
+                var keys=cfg.GetHotkeys();
+                Assert(keys.Length==8&&keys[5].Key==80&&keys[6]==null&&keys[7]==null,"Existing binds changed");
+                keys[6]=new HotkeyChord(3,77);keys[7]=new HotkeyChord(3,82);HotkeyChord.Validate(keys);
+                Assert(cfg.ActiveModel==Settings.DefaultModel,"Unknown Gemini model survived");
+                cfg.Provider="OpenAI";Assert(cfg.ActiveModel==ModelCatalog.OpenAiDefault,"Deprecated OpenAI model survived");
+                Throws(()=>cfg.SetModel("gpt-custom"),"из списка");
             });
             report.Add("RESULT: "+(report.Count-1-failed)+" passed, "+failed+" failed.");
             report.Add("Live API access, answer accuracy, and third-party recording/streaming compatibility are NOT verified.");

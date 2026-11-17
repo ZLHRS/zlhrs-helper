@@ -17,22 +17,22 @@ using System.Web.Script.Serialization;
 
 namespace ZlhrsHelper {
     public sealed class Settings {
-        internal const string DefaultModel="gemini-3.5-flash-lite";
+        internal const string DefaultModel=ModelCatalog.GeminiDefault;
         public string Model=DefaultModel;
         public string SystemPrompt="";
         public string ProtectedKey="";
         public string Provider="Gemini";
-        public string OpenAiModel="gpt-4.1-mini";
+        public string OpenAiModel=ModelCatalog.OpenAiDefault;
         public string OpenAiProtectedKey="";
         public string MainTheme="green";
         public string AnswerTheme="light";
-        internal string ActiveModel { get { return Provider=="OpenAI"?OpenAiModel:Model; } }
-        internal void SetModel(string model){if(Provider=="OpenAI")OpenAiModel=OpenAiApi.NormalizeModel(model);else Model=VisionApi.NormalizeModel(model);}
+        internal string ActiveModel { get { return ModelCatalog.Resolve(Provider,Provider=="OpenAI"?OpenAiModel:Model); } }
+        internal void SetModel(string model){ModelCatalog.Validate(Provider,model);if(Provider=="OpenAI")OpenAiModel=model;else Model=model;}
         public int HotkeyIndex=0;
         public int Opacity=88;
         public HotkeyChord[] Hotkeys;
         internal HotkeyChord[] GetHotkeys(){
-            var defaults=new[]{new HotkeyChord(HotkeyIndex==2?6u:3u,HotkeyIndex==2?119u:HotkeyIndex==1?87u:81u),new HotkeyChord(3,65),new HotkeyChord(3,88),new HotkeyChord(3,83),null,null};
+            var defaults=new[]{new HotkeyChord(HotkeyIndex==2?6u:3u,HotkeyIndex==2?119u:HotkeyIndex==1?87u:81u),new HotkeyChord(3,65),new HotkeyChord(3,88),new HotkeyChord(3,83),null,null,null,null};
             if(Hotkeys==null)return defaults;
             if(Hotkeys.Length>=4&&Hotkeys.Length<defaults.Length){Array.Copy(Hotkeys,defaults,Hotkeys.Length);return defaults;}
             return Hotkeys;
