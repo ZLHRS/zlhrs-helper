@@ -147,8 +147,8 @@ namespace ZlhrsHelper {
                     mini.SetOpacity(0);mini.SetVisible(false);mini.SetVisible(true);Assert(!mini.Visible,"Toggle bypassed zero opacity");
                 }
             });
-            Check("Curated Gemini models and eight independent binding editors",()=>{
-                using(var form=new MainForm(true)){var choices=form.Controls.OfType<ComboBox>().Single(c=>c.Name=="Model");Assert(choices.DropDownStyle==ComboBoxStyle.DropDownList&&choices.Items.Cast<string>().SequenceEqual(ModelCatalog.Choices("Gemini"))&&choices.Text==Settings.DefaultModel,"Model list or default changed");Assert(form.Controls.OfType<HotkeyBox>().Count()==8,"Missing binding editors");}
+            Check("Curated Gemini models and nine independent binding editors",()=>{
+                using(var form=new MainForm(true)){var choices=form.Controls.OfType<ComboBox>().Single(c=>c.Name=="Model");Assert(choices.DropDownStyle==ComboBoxStyle.DropDownList&&choices.Items.Cast<string>().SequenceEqual(ModelCatalog.Choices("Gemini"))&&choices.Text==Settings.DefaultModel,"Model list or default changed");Assert(form.Controls.OfType<HotkeyBox>().Count()==9,"Missing binding editors");}
                 var payload=Json.New().DeserializeObject(VisionApi.Request("gemini-4-argon",image)) as Dictionary<string,object>;Assert(payload.ContainsKey("contents"),"Gemini request missing");
             });
             Check("System prompt persists multiline Unicode and old settings stay empty",()=>{
@@ -404,7 +404,7 @@ namespace ZlhrsHelper {
             Check("Existing hotkeys gain an optional next-key binding without changing old chords",()=>{
                 var settings=new Settings{Hotkeys=new[]{new HotkeyChord(3,81),new HotkeyChord(3,65),new HotkeyChord(3,88),new HotkeyChord(3,83)}};
                 var migrated=settings.GetHotkeys();
-                Assert(migrated.Length==8&&migrated.Skip(4).All(chord=>chord==null)&&migrated.Take(4).SequenceEqual(settings.Hotkeys),"Existing binds changed");
+                Assert(migrated.Length==9&&migrated.Skip(4).All(chord=>chord==null)&&migrated.Take(4).SequenceEqual(settings.Hotkeys),"Existing binds changed");
                 HotkeyChord.Validate(migrated);
                 migrated[4]=new HotkeyChord(3,75);HotkeyChord.Validate(migrated);
                 migrated[4]=migrated[0];Throws(()=>HotkeyChord.Validate(migrated),"своя комбинация");
@@ -421,6 +421,9 @@ namespace ZlhrsHelper {
                     method.Invoke(form,new object[]{message});
                     Assert(!form.Visible&&picker.Text=="OpenAI"&&key.Text=="","Provider hotkey leaked an old key or opened settings");
                     key.Text="openai-draft-test";
+                    method.Invoke(form,new object[]{message});
+                    Assert(!form.Visible&&picker.Text=="Claude"&&key.Text=="","Claude provider reused another provider key");
+                    key.Text="claude-draft-test";
                     method.Invoke(form,new object[]{message});
                     Assert(!form.Visible&&picker.Text=="Gemini"&&key.Text=="gemini-draft-test"&&model.Text==ModelCatalog.Choices("Gemini").Last(),"Provider hotkey lost draft settings");
                 }
@@ -503,15 +506,104 @@ namespace ZlhrsHelper {
                 var cfg=new Settings{Model="gemini-3.6-flash",OpenAiModel="gpt-5-mini",Hotkeys=new Settings().GetHotkeys().Take(6).ToArray()};
                 cfg.Hotkeys[5]=new HotkeyChord(3,80);
                 var keys=cfg.GetHotkeys();
-                Assert(keys.Length==8&&keys[5].Key==80&&keys[6]==null&&keys[7]==null,"Existing binds changed");
+                Assert(keys.Length==9&&keys[5].Key==80&&keys[6]==null&&keys[7]==null,"Existing binds changed");
                 keys[6]=new HotkeyChord(3,77);keys[7]=new HotkeyChord(3,82);HotkeyChord.Validate(keys);
                 Assert(cfg.ActiveModel==Settings.DefaultModel,"Unknown Gemini model survived");
                 cfg.Provider="OpenAI";Assert(cfg.ActiveModel==ModelCatalog.OpenAiDefault,"Deprecated OpenAI model survived");
                 Throws(()=>cfg.SetModel("gpt-custom"),"из списка");
             });
+            Check("Claude keys models and rotation stay separate across encrypted serialization",()=>{
+                var cfg=new Settings();
+                cfg.SetKey("gemini-test-isolation");
+                cfg.Provider="OpenAI";cfg.SetKey(1,"openai-test-isolation");cfg.KeySlot=1;
+                cfg.Provider="Claude";
+                Assert(cfg.Key==""&&cfg.ActiveModel==ModelCatalog.ClaudeDefault&&!cfg.AutoRotate,"Old settings inherited unrelated Claude fields");
+                cfg.SetKey("claude-primary-test");cfg.SetKey(2,"claude-extra-test");cfg.KeySlot=2;
+                cfg.AutoRotate=true;cfg.RotateEachRequest=true;cfg.SetModel(ModelCatalog.Choices("Claude")[1]);
+                string json=Json.New().Serialize(cfg);
+                Assert(!json.Contains("claude-primary-test")&&!json.Contains("claude-extra-test"),"Claude key stored in plaintext");
+                var loaded=Json.New().Deserialize<Settings>(json);
+                Assert(loaded.Key=="claude-extra-test"&&loaded.GetKey(0)=="claude-primary-test"&&loaded.AutoRotate&&loaded.RotateEachRequest&&loaded.ActiveModel==ModelCatalog.Choices("Claude")[1],"Claude settings lost");
+                loaded.SetKey("");Assert(loaded.GetKey(0)=="claude-primary-test"&&loaded.Key=="","Clearing a Claude slot affected another slot");
+                loaded.Provider="OpenAI";Assert(loaded.Key=="openai-test-isolation"&&!loaded.AutoRotate,"Claude settings leaked into OpenAI");
+                loaded.Provider="Gemini";Assert(loaded.Key=="gemini-test-isolation"&&!loaded.RotateEachRequest,"Claude settings leaked into Gemini");
+            });
+            Check("Claude screenshot payload carries PNG schema and custom instructions",()=>{
+                var payload=Json.New().DeserializeObject(ClaudeApi.Request(ModelCatalog.ClaudeDefault,image,"Контекст теста")) as Dictionary<string,object>;
+                Assert((string)payload["model"]==ModelCatalog.ClaudeDefault&&((string)payload["system"]).Contains("Контекст теста"),"Claude model or prompt missing");
+                var msg=(Dictionary<string,object>)((object[])payload["messages"])[0];
+                var img=(Dictionary<string,object>)((object[])msg["content"])[0];
+                var source=(Dictionary<string,object>)img["source"];
+                Assert((string)img["type"]=="image"&&(string)source["type"]=="base64"&&(string)source["media_type"]=="image/png"&&Convert.FromBase64String((string)source["data"]).SequenceEqual(image.Png),"Claude image missing");
+                var config=(Dictionary<string,object>)payload["output_config"];
+                var format=(Dictionary<string,object>)config["format"];
+                Assert((string)format["type"]=="json_schema"&&Json.New().Serialize(format["schema"])==Json.New().Serialize(VisionApi.Schema()),"Claude schema changed");
+                Throws(()=>ClaudeApi.Request(Settings.DefaultModel,image),"из списка");
+            });
+            Check("Claude parses text blocks and rejects partial refused and malformed results",()=>{
+                string body=Json.New().Serialize(Sample());
+                var response=Json.New().Serialize(Json.Obj("stop_reason","end_turn","content",new object[]{
+                    Json.Obj("type","thinking","thinking","private"),Json.Obj("type","text","text",body.Substring(0,20)),Json.Obj("type","text","text",body.Substring(20))}));
+                Assert(ClaudeApi.Parse(response).questions[0].answers[0]=="Б) 4","Claude text blocks lost");
+                Throws(()=>ClaudeApi.Parse("not-json"),"некорректный");
+                Throws(()=>ClaudeApi.Parse("{}"),"не завершил");
+                Throws(()=>ClaudeApi.Parse("{\"stop_reason\":\"max_tokens\",\"content\":[]}"),"не завершил");
+                Throws(()=>ClaudeApi.Parse("{\"stop_reason\":\"refusal\"}"),"отказался");
+                Throws(()=>ClaudeApi.Parse("{\"stop_reason\":\"end_turn\",\"content\":[]}"),"пустой");
+                Throws(()=>ClaudeApi.Parse("{\"stop_reason\":\"end_turn\",\"content\":[{\"type\":\"refusal\"}]}"),"отказался");
+            });
+            Check("Claude HTTP sends only its own authorization and preserves diagnostics",()=>{
+                string response=Json.New().Serialize(Json.Obj("stop_reason","end_turn","content",new[]{Json.Obj("type","text","text",Json.New().Serialize(Sample()))}));
+                using(var client=new HttpClient(new ClaudeHandler(200,response))){
+                    var result=ClaudeApi.SendAsync(client,"claude-transport-test","{}",CancellationToken.None).GetAwaiter().GetResult();
+                    Assert(result.questions.Length==3,"Claude HTTP result lost");
+                }
+                using(var client=new HttpClient(new ClaudeHandler(401,"{}")))
+                    Throws(()=>ClaudeApi.SendAsync(client,"claude-transport-test","{}",CancellationToken.None).GetAwaiter().GetResult(),"Ключ Claude");
+                using(var client=new HttpClient(new ClaudeHandler(402,"{\"error\":{\"type\":\"billing_error\",\"message\":\"claude-transport-test\"}}"))){
+                    try{ClaudeApi.SendAsync(client,"claude-transport-test","{}",CancellationToken.None).GetAwaiter().GetResult();throw new Exception("Billing error accepted");}
+                    catch(InvalidOperationException e){Assert(!(e is TemporaryRateLimit)&&e.Message.Contains("402")&&!e.Message.Contains("claude-transport-test"),"Billing error leaked key or allowed rotation");}
+                }
+            });
+            Check("Claude confirmed temporary limits support the existing key rotation",()=>{
+                using(var client=new HttpClient(new ClaudeHandler(429,"{\"error\":{\"type\":\"rate_limit_error\"}}"))){
+                    try{ClaudeApi.SendAsync(client,"claude-transport-test","{}",CancellationToken.None).GetAwaiter().GetResult();throw new Exception("Rate limit accepted");}
+                    catch(TemporaryRateLimit e){Assert(e.RetryAfter==TimeSpan.FromSeconds(2),"Claude Retry-After lost");}
+                }
+                using(var client=new HttpClient(new ClaudeHandler(429,"{\"error\":{\"type\":\"billing_error\"}}"))){
+                    try{ClaudeApi.SendAsync(client,"claude-transport-test","{}",CancellationToken.None).GetAwaiter().GetResult();throw new Exception("Quota accepted");}
+                    catch(InvalidOperationException e){Assert(!(e is TemporaryRateLimit),"Claude quota rotated keys");}
+                }
+                var cfg=new Settings{Hotkeys=new Settings().GetHotkeys().Take(8).ToArray()};
+                Assert(cfg.GetHotkeys().Length==9&&cfg.GetHotkeys()[8]==null,"Exit hotkey changed existing bindings");
+            });
+            Check("Exit hotkey cancels an active request and disposes both windows",()=>{
+                using(var form=new MainForm(true)){
+                    form.StartInTray();form.Show();form.Mini.SetVisible(true);
+                    using(var pending=new CancellationTokenSource()){
+                        var requestField=typeof(MainForm).GetField("request",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic);
+                        requestField.SetValue(form,pending);
+                        var method=typeof(MainForm).GetMethod("WndProc",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic);
+                        method.Invoke(form,new object[]{Message.Create(form.Handle,Native.WM_HOTKEY,new IntPtr(HotkeyChord.ExitId),IntPtr.Zero)});
+                        Assert(pending.IsCancellationRequested&&form.IsDisposed&&form.Mini.IsDisposed,"Exit left a request or window running");
+                    }
+                }
+            });
             report.Add("RESULT: "+(report.Count-1-failed)+" passed, "+failed+" failed.");
             report.Add("Live API access, answer accuracy, and third-party recording/streaming compatibility are NOT verified.");
             File.WriteAllLines(Path.GetFullPath(path),report,Encoding.UTF8);return failed==0?0:1;
+        }
+        sealed class ClaudeHandler : HttpMessageHandler {
+            readonly int code;readonly string body;
+            internal ClaudeHandler(int code,string body){this.code=code;this.body=body;}
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken token){
+                Assert(request.RequestUri.AbsoluteUri==ClaudeApi.Endpoint&&request.Method==HttpMethod.Post,"Wrong Claude destination");
+                Assert(request.Headers.Authorization.Scheme=="Bearer"&&request.Headers.Authorization.Parameter=="claude-transport-test","Wrong Claude authentication");
+                Assert(request.Headers.GetValues("anthropic-version").Single()==ClaudeApi.Version&&!request.Headers.Contains("x-goog-api-key"),"Provider header isolation failed");
+                var response=new HttpResponseMessage((HttpStatusCode)code){Content=new StringContent(body)};
+                if(code==429)response.Headers.RetryAfter=new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(2));
+                return Task.FromResult(response);
+            }
         }
         sealed class OpenAiHandler : HttpMessageHandler {
             readonly int code;readonly string body;

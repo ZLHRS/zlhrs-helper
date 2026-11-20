@@ -24,15 +24,21 @@ namespace ZlhrsHelper {
         public string Provider="Gemini";
         public string OpenAiModel=ModelCatalog.OpenAiDefault;
         public string OpenAiProtectedKey="";
+        public string ClaudeModel=ModelCatalog.ClaudeDefault;
+        public string ClaudeProtectedKey="";
         public string MainTheme="green";
         public string AnswerTheme="light";
-        internal string ActiveModel { get { return ModelCatalog.Resolve(Provider,Provider=="OpenAI"?OpenAiModel:Model); } }
-        internal void SetModel(string model){ModelCatalog.Validate(Provider,model);if(Provider=="OpenAI")OpenAiModel=model;else Model=model;}
+        internal string ActiveModel { get { return ModelCatalog.Resolve(Provider,Provider=="Claude"?ClaudeModel:Provider=="OpenAI"?OpenAiModel:Model); } }
+        internal void SetModel(string model){SetModelFor(Provider,model);}
+        internal void SetModelFor(string provider,string model){
+            ModelCatalog.Validate(provider,model);
+            if(provider=="Claude")ClaudeModel=model;else if(provider=="OpenAI")OpenAiModel=model;else Model=model;
+        }
         public int HotkeyIndex=0;
         public int Opacity=88;
         public HotkeyChord[] Hotkeys;
         internal HotkeyChord[] GetHotkeys(){
-            var defaults=new[]{new HotkeyChord(HotkeyIndex==2?6u:3u,HotkeyIndex==2?119u:HotkeyIndex==1?87u:81u),new HotkeyChord(3,65),new HotkeyChord(3,88),new HotkeyChord(3,83),null,null,null,null};
+            var defaults=new[]{new HotkeyChord(HotkeyIndex==2?6u:3u,HotkeyIndex==2?119u:HotkeyIndex==1?87u:81u),new HotkeyChord(3,65),new HotkeyChord(3,88),new HotkeyChord(3,83),null,null,null,null,null};
             if(Hotkeys==null)return defaults;
             if(Hotkeys.Length>=4&&Hotkeys.Length<defaults.Length){Array.Copy(Hotkeys,defaults,Hotkeys.Length);return defaults;}
             return Hotkeys;
@@ -58,29 +64,29 @@ namespace ZlhrsHelper {
             string tmp=FilePath+".tmp";File.WriteAllText(tmp,Json.New().Serialize(this),Encoding.UTF8);
             if(File.Exists(FilePath))File.Replace(tmp,FilePath,null);else File.Move(tmp,FilePath);
         }
-        public string[] GeminiExtraKeys,OpenAiExtraKeys;
-        public int GeminiSlot,OpenAiSlot;
-        public bool GeminiAutoRotate,OpenAiAutoRotate;
-        public bool GeminiRotateEachRequest,OpenAiRotateEachRequest;
+        public string[] GeminiExtraKeys,OpenAiExtraKeys,ClaudeExtraKeys;
+        public int GeminiSlot,OpenAiSlot,ClaudeSlot;
+        public bool GeminiAutoRotate,OpenAiAutoRotate,ClaudeAutoRotate;
+        public bool GeminiRotateEachRequest,OpenAiRotateEachRequest,ClaudeRotateEachRequest;
         internal bool RotateEachRequest {
-            get{return Provider=="OpenAI"?OpenAiRotateEachRequest:GeminiRotateEachRequest;}
-            set{if(Provider=="OpenAI")OpenAiRotateEachRequest=value;else GeminiRotateEachRequest=value;}
+            get{return Provider=="Claude"?ClaudeRotateEachRequest:Provider=="OpenAI"?OpenAiRotateEachRequest:GeminiRotateEachRequest;}
+            set{if(Provider=="Claude")ClaudeRotateEachRequest=value;else if(Provider=="OpenAI")OpenAiRotateEachRequest=value;else GeminiRotateEachRequest=value;}
         }
         internal const int SlotCount=3;
         internal int KeySlot {
-            get{return Math.Max(0,Math.Min(SlotCount-1,Provider=="OpenAI"?OpenAiSlot:GeminiSlot));}
-            set{if(value<0||value>=SlotCount)throw new ArgumentOutOfRangeException("value");if(Provider=="OpenAI")OpenAiSlot=value;else GeminiSlot=value;}
+            get{return Math.Max(0,Math.Min(SlotCount-1,Provider=="Claude"?ClaudeSlot:Provider=="OpenAI"?OpenAiSlot:GeminiSlot));}
+            set{if(value<0||value>=SlotCount)throw new ArgumentOutOfRangeException("value");if(Provider=="Claude")ClaudeSlot=value;else if(Provider=="OpenAI")OpenAiSlot=value;else GeminiSlot=value;}
         }
         internal bool AutoRotate {
-            get{return Provider=="OpenAI"?OpenAiAutoRotate:GeminiAutoRotate;}
-            set{if(Provider=="OpenAI")OpenAiAutoRotate=value;else GeminiAutoRotate=value;}
+            get{return Provider=="Claude"?ClaudeAutoRotate:Provider=="OpenAI"?OpenAiAutoRotate:GeminiAutoRotate;}
+            set{if(Provider=="Claude")ClaudeAutoRotate=value;else if(Provider=="OpenAI")OpenAiAutoRotate=value;else GeminiAutoRotate=value;}
         }
         internal string Key {get{return GetKey(KeySlot);}}
         internal void SetKey(string key){SetKey(KeySlot,key);}
         internal string GetKey(int slot){
             bool open=Provider=="OpenAI";
-            var extra=open?OpenAiExtraKeys:GeminiExtraKeys;
-            string value=slot==0?(open?OpenAiProtectedKey:ProtectedKey):extra!=null&&slot<=extra.Length?extra[slot-1]:null;
+            var extra=Provider=="Claude"?ClaudeExtraKeys:open?OpenAiExtraKeys:GeminiExtraKeys;
+            string value=slot==0?(Provider=="Claude"?ClaudeProtectedKey:open?OpenAiProtectedKey:ProtectedKey):extra!=null&&slot<=extra.Length?extra[slot-1]:null;
             return String.IsNullOrEmpty(value)?"":Encoding.UTF8.GetString(ProtectedData.Unprotect(Convert.FromBase64String(value),null,DataProtectionScope.CurrentUser));
         }
         internal string[] GetKeys(){
@@ -91,10 +97,10 @@ namespace ZlhrsHelper {
         internal void SetKey(int slot,string key){
             bool open=Provider=="OpenAI";
             string value=String.IsNullOrWhiteSpace(key)?"":Convert.ToBase64String(ProtectedData.Protect(Encoding.UTF8.GetBytes(key.Trim()),null,DataProtectionScope.CurrentUser));
-            if(slot==0){if(open)OpenAiProtectedKey=value;else ProtectedKey=value;return;}
-            var extra=open?OpenAiExtraKeys:GeminiExtraKeys;
+            if(slot==0){if(Provider=="Claude")ClaudeProtectedKey=value;else if(open)OpenAiProtectedKey=value;else ProtectedKey=value;return;}
+            var extra=Provider=="Claude"?ClaudeExtraKeys:open?OpenAiExtraKeys:GeminiExtraKeys;
             if(extra==null||extra.Length!=SlotCount-1)Array.Resize(ref extra,SlotCount-1);
-            extra[slot-1]=value;if(open)OpenAiExtraKeys=extra;else GeminiExtraKeys=extra;
+            extra[slot-1]=value;if(Provider=="Claude")ClaudeExtraKeys=extra;else if(open)OpenAiExtraKeys=extra;else GeminiExtraKeys=extra;
         }
     }
     internal static class Json {

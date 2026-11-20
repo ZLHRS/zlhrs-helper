@@ -3,9 +3,13 @@ using System;
 namespace ZlhrsHelper {
     internal static class ModelCatalog {
         internal const string GeminiDefault="gemini-3.5-flash-lite",OpenAiDefault="gpt-6-luna";
+        internal const string ClaudeDefault="claude-sonnet-5-5";
+        internal static readonly string[] Providers={"Gemini","OpenAI","Claude"};
         static readonly string[] Gemini={GeminiDefault};
+        static readonly string[] Claude={ClaudeDefault,"claude-haiku-5-5","claude-opus-5-5"};
+        internal static string NextProvider(string current){return Providers[(Array.IndexOf(Providers,current)+1)%Providers.Length];}
         static readonly string[] OpenAi={OpenAiDefault,"gpt-6.1-terra","gpt-6.1-sol"};
-        static string[] Models(string provider){return provider=="OpenAI"?OpenAi:Gemini;}
+        static string[] Models(string provider){return provider=="Claude"?Claude:provider=="OpenAI"?OpenAi:Gemini;}
         internal static string[] Choices(string provider){return (string[])Models(provider).Clone();}
         internal static string Resolve(string provider,string saved){
             var models=Models(provider);
