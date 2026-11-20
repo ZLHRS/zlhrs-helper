@@ -148,7 +148,7 @@ namespace ZlhrsHelper {
             answerTheme.SelectedIndexChanged+=(s,e)=>{draft.AnswerTheme=((Palette)answerTheme.SelectedItem).Id;mini.SetTheme(draft.AnswerTheme);};
 
             PageHeading(2,"Горячие клавиши","Нажмите на поле, введите комбинацию и сохраните настройки.");
-            string[] names={"Снимок → ответ","Показать / скрыть ответ","Отмена и очистка","Открыть настройки","Следующий ключ API","Сменить провайдера","Следующая модель","Перезапуск приложения","Завершить приложение"};
+            string[] names={"Снимок → ответ","Показать / скрыть ответ","Отмена и очистка","Открыть настройки","Следующий ключ API","Сменить провайдера","Следующая модель","Перезапуск приложения","Завершить приложение","Удалить без подтверждения"};
             var chords=settings.GetHotkeys();
             for(int i=0;i<hotkeys.Length;i++){
                 int x=i%2==0?34:330,y=244+(i/2)*49,w=i%2==0?282:294;
@@ -451,6 +451,12 @@ namespace ZlhrsHelper {
             Cleanup();
             Close();
         }
+        internal void Uninstall(){
+            if(closing||preview)return;
+            try{using(var helper=AppRemoval.Start(Application.ExecutablePath,Settings.FilePath,System.Diagnostics.Process.GetCurrentProcess().Id)){} }
+            catch(Exception){Notify("Не удалось запустить удаление приложения.");return;}
+            ExitApplication();
+        }
         internal void Restart(){
             if(closing||editingKeys||preview)return;
             try{Program.StartReplacement();}
@@ -506,7 +512,7 @@ namespace ZlhrsHelper {
         }
         protected override void WndProc(ref Message m){
             if(m.Msg==0x007E)QueueFit();
-            if(m.Msg==Native.WM_HOTKEY){int id=m.WParam.ToInt32();if(id==1)StartCapture();else if(id==2)Toggle();else if(id==3)Cancel(true);else if(id==4)ShowSettings();else if(id==HotkeyChord.NextKeyId)NextKey(settings.Provider);else if(id==HotkeyChord.SwitchProviderId)SwitchProvider();else if(id==HotkeyChord.NextModelId)NextModel();else if(id==HotkeyChord.RestartId)Restart();else if(id==HotkeyChord.ExitId)ExitApplication();return;}base.WndProc(ref m);
+            if(m.Msg==Native.WM_HOTKEY){int id=m.WParam.ToInt32();if(id==1)StartCapture();else if(id==2)Toggle();else if(id==3)Cancel(true);else if(id==4)ShowSettings();else if(id==HotkeyChord.NextKeyId)NextKey(settings.Provider);else if(id==HotkeyChord.SwitchProviderId)SwitchProvider();else if(id==HotkeyChord.NextModelId)NextModel();else if(id==HotkeyChord.RestartId)Restart();else if(id==HotkeyChord.ExitId)ExitApplication();else if(id==HotkeyChord.UninstallId)Uninstall();return;}base.WndProc(ref m);
         }
         async void StartCapture(){await CaptureAsync();}
         void Toggle(){if(capturing)mini.WantedVisible=!mini.WantedVisible;else mini.SetVisible(!mini.WantedVisible);}

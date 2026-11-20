@@ -10,7 +10,7 @@ namespace ZlhrsHelper {
         public HotkeyChord(){}
         public HotkeyChord(uint modifiers,uint key){Modifiers=modifiers;Key=key;}
         public override string ToString(){return ((Modifiers&2)!=0?"Ctrl + ":"")+((Modifiers&1)!=0?"Alt + ":"")+((Modifiers&4)!=0?"Shift + ":"")+((Modifiers&8)!=0?"Win + ":"")+((Keys)Key).ToString();}
-        internal const int NextKeyId=5,SwitchProviderId=6,NextModelId=7,RestartId=8,ExitId=9,Count=ExitId;
+        internal const int NextKeyId=5,SwitchProviderId=6,NextModelId=7,RestartId=8,ExitId=9,UninstallId=10,Count=UninstallId;
         internal static void Validate(HotkeyChord[] chords){
             if(chords==null||chords.Length!=Count)throw new InvalidOperationException("Проверьте настройки горячих клавиш.");
             var seen=new HashSet<string>();

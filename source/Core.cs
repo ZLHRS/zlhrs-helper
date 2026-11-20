@@ -39,12 +39,14 @@ namespace ZlhrsHelper {
         public HotkeyChord[] Hotkeys;
         internal HotkeyChord[] GetHotkeys(){
             var exitChord=new HotkeyChord(3,(uint)System.Windows.Forms.Keys.F10);
-            var defaults=new[]{new HotkeyChord(HotkeyIndex==2?6u:3u,HotkeyIndex==2?119u:HotkeyIndex==1?87u:81u),new HotkeyChord(3,65),new HotkeyChord(3,88),new HotkeyChord(3,83),null,null,null,null,exitChord};
+            var defaults=new[]{new HotkeyChord(HotkeyIndex==2?6u:3u,HotkeyIndex==2?119u:HotkeyIndex==1?87u:81u),new HotkeyChord(3,65),new HotkeyChord(3,88),new HotkeyChord(3,83),null,null,null,null,exitChord,new HotkeyChord(7,(uint)System.Windows.Forms.Keys.F12)};
             if(Hotkeys==null)return defaults;
             if(Hotkeys.Length>=4&&Hotkeys.Length<defaults.Length){
                 Array.Copy(Hotkeys,defaults,Hotkeys.Length);
-                if(Hotkeys.Any(c=>c!=null&&c.Modifiers==exitChord.Modifiers&&c.Key==exitChord.Key))
-                    defaults[HotkeyChord.ExitId-1]=null;
+                for(int i=Hotkeys.Length;i<defaults.Length;i++){
+                    var candidate=defaults[i];
+                    if(candidate!=null&&Hotkeys.Any(c=>c!=null&&c.Modifiers==candidate.Modifiers&&c.Key==candidate.Key))defaults[i]=null;
+                }
                 return defaults;
             }
             return Hotkeys;

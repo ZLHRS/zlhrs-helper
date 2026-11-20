@@ -148,7 +148,7 @@ namespace ZlhrsHelper {
                 }
             });
             Check("Curated Gemini models and nine independent binding editors",()=>{
-                using(var form=new MainForm(true)){var choices=form.Controls.OfType<ComboBox>().Single(c=>c.Name=="Model");Assert(choices.DropDownStyle==ComboBoxStyle.DropDownList&&choices.Items.Cast<string>().SequenceEqual(ModelCatalog.Choices("Gemini"))&&choices.Text==Settings.DefaultModel,"Model list or default changed");Assert(form.Controls.OfType<HotkeyBox>().Count()==9,"Missing binding editors");}
+                using(var form=new MainForm(true)){var choices=form.Controls.OfType<ComboBox>().Single(c=>c.Name=="Model");Assert(choices.DropDownStyle==ComboBoxStyle.DropDownList&&choices.Items.Cast<string>().SequenceEqual(ModelCatalog.Choices("Gemini"))&&choices.Text==Settings.DefaultModel,"Model list or default changed");Assert(form.Controls.OfType<HotkeyBox>().Count()==HotkeyChord.Count,"Missing binding editors");}
                 var payload=Json.New().DeserializeObject(VisionApi.Request("gemini-4-argon",image)) as Dictionary<string,object>;Assert(payload.ContainsKey("contents"),"Gemini request missing");
             });
             Check("System prompt persists multiline Unicode and old settings stay empty",()=>{
@@ -404,7 +404,7 @@ namespace ZlhrsHelper {
             Check("Existing hotkeys gain an optional next-key binding without changing old chords",()=>{
                 var settings=new Settings{Hotkeys=new[]{new HotkeyChord(3,81),new HotkeyChord(3,65),new HotkeyChord(3,88),new HotkeyChord(3,83)}};
                 var migrated=settings.GetHotkeys();
-                Assert(migrated.Length==9&&migrated.Skip(4).Take(4).All(chord=>chord==null)&&migrated.Take(4).SequenceEqual(settings.Hotkeys),"Existing binds changed");
+                Assert(migrated.Length==HotkeyChord.Count&&migrated.Skip(4).Take(4).All(chord=>chord==null)&&migrated.Take(4).SequenceEqual(settings.Hotkeys),"Existing binds changed");
                 HotkeyChord.Validate(migrated);
                 migrated[4]=new HotkeyChord(3,75);HotkeyChord.Validate(migrated);
                 migrated[4]=migrated[0];Throws(()=>HotkeyChord.Validate(migrated),"своя комбинация");
@@ -506,7 +506,7 @@ namespace ZlhrsHelper {
                 var cfg=new Settings{Model="gemini-3.6-flash",OpenAiModel="gpt-5-mini",Hotkeys=new Settings().GetHotkeys().Take(6).ToArray()};
                 cfg.Hotkeys[5]=new HotkeyChord(3,80);
                 var keys=cfg.GetHotkeys();
-                Assert(keys.Length==9&&keys[5].Key==80&&keys[6]==null&&keys[7]==null,"Existing binds changed");
+                Assert(keys.Length==HotkeyChord.Count&&keys[5].Key==80&&keys[6]==null&&keys[7]==null,"Existing binds changed");
                 keys[6]=new HotkeyChord(3,77);keys[7]=new HotkeyChord(3,82);HotkeyChord.Validate(keys);
                 Assert(cfg.ActiveModel==Settings.DefaultModel,"Unknown Gemini model survived");
                 cfg.Provider="OpenAI";Assert(cfg.ActiveModel==ModelCatalog.OpenAiDefault,"Deprecated OpenAI model survived");
@@ -587,6 +587,49 @@ namespace ZlhrsHelper {
                 Assert(cfg.GetHotkeys()[exit]==null,"Migration duplicated an existing binding");
                 cfg.Hotkeys=bindings;cfg.Hotkeys[exit]=null;
                 Assert(cfg.GetHotkeys()[exit]==null,"Disabled shortcut was restored");
+            });
+            Check("Topmost recovery restores answer above another topmost window without taking focus",()=>{
+                using(var other=new Form{TopMost=true,ShowInTaskbar=false,StartPosition=FormStartPosition.Manual,Location=new Point(-30000,-30000)})
+                using(var answer=new AnswerForm()){
+                    answer.Location=new Point(-30000,-30000);answer.SetVisible(true);
+                    other.Show();other.Activate();Application.DoEvents();
+                    Native.RaiseWithoutActivation(other.Handle);
+                    IntPtr foreground=Native.GetForegroundWindow();
+                    answer.MaintainTopmost();
+                    Assert(Native.GetForegroundWindow()==foreground,"Recovery stole keyboard focus");
+                    bool foundOther=false;
+                    for(IntPtr next=Native.GetWindow(answer.Handle,2);next!=IntPtr.Zero;next=Native.GetWindow(next,2)){
+                        if(next==other.Handle){foundOther=true;break;}
+                    }
+                    Assert(foundOther,"Answer stayed behind competing topmost window");
+                    answer.SetVisible(false);answer.MaintainTopmost();Assert(!answer.Visible,"Recovery showed hidden answer");
+                    answer.SetOpacity(0);answer.SetVisible(true);answer.MaintainTopmost();Assert(!answer.Visible,"Recovery showed transparent answer");
+                }
+                using(var settings=new MainForm(true))Assert(settings.TopMost,"Settings are not topmost");
+            });
+            Check("Uninstall shortcut preserves existing and explicitly disabled bindings",()=>{
+                var defaults=new Settings().GetHotkeys();int index=HotkeyChord.UninstallId-1;
+                Assert(defaults[index].Modifiers==7&&defaults[index].Key==(uint)Keys.F12,"Wrong uninstall shortcut");
+                var cfg=new Settings{Hotkeys=defaults.Take(index).ToArray()};
+                Assert(cfg.GetHotkeys().Take(index).SequenceEqual(cfg.Hotkeys),"Old bindings changed");
+                cfg.Hotkeys[0]=defaults[index];Assert(cfg.GetHotkeys()[index]==null,"Conflicting shortcut assigned");
+                cfg.Hotkeys=defaults;cfg.Hotkeys[index]=null;Assert(cfg.GetHotkeys()[index]==null,"Disabled shortcut restored");
+            });
+            Check("Uninstaller deletes only exact files including paths with quotes and brackets",()=>{
+                string root=Path.Combine(Path.GetTempPath(),"Zlhrs removal ' [test] "+Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(root);
+                string exe=Path.Combine(root,"dummy.exe"),config=exe+".config",settingsFile=Path.Combine(root,"settings.json"),keep=Path.Combine(root,"source.cs");
+                try{
+                    foreach(var file in new[]{exe,config,settingsFile,keep})File.WriteAllText(file,"test");
+                    using(var helper=AppRemoval.Start(exe,settingsFile,Int32.MaxValue)){
+                        Assert(helper.WaitForExit(25000),"Removal helper did not finish");
+                        Assert(helper.ExitCode==0,"Removal helper failed");
+                    }
+                    Assert(!File.Exists(exe)&&!File.Exists(config)&&!File.Exists(settingsFile)&&File.Exists(keep),"Wrong removal scope");
+                }finally{
+                    foreach(var file in new[]{exe,config,settingsFile,keep})if(File.Exists(file))File.Delete(file);
+                    Directory.Delete(root);
+                }
             });
             Check("Exit hotkey cancels an active request and disposes both windows",()=>{
                 using(var form=new MainForm(true)){
