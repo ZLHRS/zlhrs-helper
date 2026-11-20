@@ -404,7 +404,7 @@ namespace ZlhrsHelper {
             Check("Existing hotkeys gain an optional next-key binding without changing old chords",()=>{
                 var settings=new Settings{Hotkeys=new[]{new HotkeyChord(3,81),new HotkeyChord(3,65),new HotkeyChord(3,88),new HotkeyChord(3,83)}};
                 var migrated=settings.GetHotkeys();
-                Assert(migrated.Length==9&&migrated.Skip(4).All(chord=>chord==null)&&migrated.Take(4).SequenceEqual(settings.Hotkeys),"Existing binds changed");
+                Assert(migrated.Length==9&&migrated.Skip(4).Take(4).All(chord=>chord==null)&&migrated.Take(4).SequenceEqual(settings.Hotkeys),"Existing binds changed");
                 HotkeyChord.Validate(migrated);
                 migrated[4]=new HotkeyChord(3,75);HotkeyChord.Validate(migrated);
                 migrated[4]=migrated[0];Throws(()=>HotkeyChord.Validate(migrated),"своя комбинация");
@@ -574,8 +574,19 @@ namespace ZlhrsHelper {
                     try{ClaudeApi.SendAsync(client,"claude-transport-test","{}",CancellationToken.None).GetAwaiter().GetResult();throw new Exception("Quota accepted");}
                     catch(InvalidOperationException e){Assert(!(e is TemporaryRateLimit),"Claude quota rotated keys");}
                 }
-                var cfg=new Settings{Hotkeys=new Settings().GetHotkeys().Take(8).ToArray()};
-                Assert(cfg.GetHotkeys().Length==9&&cfg.GetHotkeys()[8]==null,"Exit hotkey changed existing bindings");
+
+            });
+            Check("Default exit binding migrates without taking an existing chord or restoring a cleared binding",()=>{
+                int exit=HotkeyChord.ExitId-1;
+                var bindings=new Settings().GetHotkeys();
+                Assert(bindings[exit].Modifiers==3&&bindings[exit].Key==(uint)Keys.F10,"Unexpected default exit chord");
+                var cfg=new Settings{Hotkeys=bindings.Take(exit).ToArray()};
+                var migrated=cfg.GetHotkeys();
+                Assert(migrated[exit].Key==(uint)Keys.F10&&migrated.Take(exit).SequenceEqual(cfg.Hotkeys),"Migration lost default or user bindings");
+                cfg.Hotkeys[0]=bindings[exit];
+                Assert(cfg.GetHotkeys()[exit]==null,"Migration duplicated an existing binding");
+                cfg.Hotkeys=bindings;cfg.Hotkeys[exit]=null;
+                Assert(cfg.GetHotkeys()[exit]==null,"Disabled shortcut was restored");
             });
             Check("Exit hotkey cancels an active request and disposes both windows",()=>{
                 using(var form=new MainForm(true)){

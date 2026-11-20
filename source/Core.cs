@@ -38,9 +38,15 @@ namespace ZlhrsHelper {
         public int Opacity=88;
         public HotkeyChord[] Hotkeys;
         internal HotkeyChord[] GetHotkeys(){
-            var defaults=new[]{new HotkeyChord(HotkeyIndex==2?6u:3u,HotkeyIndex==2?119u:HotkeyIndex==1?87u:81u),new HotkeyChord(3,65),new HotkeyChord(3,88),new HotkeyChord(3,83),null,null,null,null,null};
+            var exitChord=new HotkeyChord(3,(uint)System.Windows.Forms.Keys.F10);
+            var defaults=new[]{new HotkeyChord(HotkeyIndex==2?6u:3u,HotkeyIndex==2?119u:HotkeyIndex==1?87u:81u),new HotkeyChord(3,65),new HotkeyChord(3,88),new HotkeyChord(3,83),null,null,null,null,exitChord};
             if(Hotkeys==null)return defaults;
-            if(Hotkeys.Length>=4&&Hotkeys.Length<defaults.Length){Array.Copy(Hotkeys,defaults,Hotkeys.Length);return defaults;}
+            if(Hotkeys.Length>=4&&Hotkeys.Length<defaults.Length){
+                Array.Copy(Hotkeys,defaults,Hotkeys.Length);
+                if(Hotkeys.Any(c=>c!=null&&c.Modifiers==exitChord.Modifiers&&c.Key==exitChord.Key))
+                    defaults[HotkeyChord.ExitId-1]=null;
+                return defaults;
+            }
             return Hotkeys;
         }
         internal static string FilePath { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"ZlhrsHelper","settings.json"); } }
